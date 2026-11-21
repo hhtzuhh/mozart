@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#172526">
+  <title>PianoMime · Rehearsal studio</title>
+  <link rel="stylesheet" href="studio.css">
+  <script src="recording/session.js" defer></script>
+  <script src="studio.js" defer></script>
+</head>
+<body>
+<header class="mast"><div class="wrap mast-inner"><div class="brand"><i class="brand-keys" aria-hidden="true"></i>PianoMime</div><span class="mast-divider"></span><span>Rehearsal studio</span><span class="recorded"><i></i> Recorded rehearsal</span></div></header>
+<main class="wrap">
+  <div class="hero">
+    <div><div class="kicker" id="subtitle">Performance review</div><h1 id="title">Rehearsal studio</h1></div>
+    <button type="button" class="primary" id="guide">▶ &nbsp; Replay rehearsal</button>
+  </div>
+  <p class="notice" role="status" id="notice" hidden></p>
+  <section class="song-reference" id="songReference" aria-label="Song reference" hidden>
+    <div><h2>Song reference</h2><p>Target piano score · rehearsal tempo</p></div>
+    <button type="button" id="playScore">▶ &nbsp; Listen from start</button>
+    <a id="officialSong" target="_blank" rel="noopener noreferrer" hidden>Keane · official recording ↗</a>
+  </section>
+  <nav id="rounds" aria-label="Rehearsal rounds"></nav>
+  <section class="console">
+    <div class="media-col">
+      <div class="panel-head"><h2>Performance</h2><div id="versions" class="switch" aria-label="Recording version"></div></div>
+      <div class="screen-labels"><div>Target score <a href="recording/score.mid" download>Target MIDI ↓</a></div><div><span id="takeLabel"></span> <a id="takeMidi" download>Played MIDI ↓</a></div></div>
+      <div id="stage"></div>
+      <div class="listen-row"><span>Replay <span id="listenRange"></span></span><div id="sound" class="switch" aria-label="Replay passage by audio source"></div></div>
+      <section class="midi-inspect" aria-label="Aligned MIDI comparison">
+        <div class="midi-heading"><h3>MIDI at <span id="frameTime"></span></h3><button type="button" id="nextError">Next mismatch →</button></div>
+        <div class="midi-line"><b>Target</b><span id="targetNotes"></span></div>
+        <div class="midi-line"><b>Played</b><span id="playedNotes"></span></div>
+        <div id="errorNotes"></div>
+        <div class="error-track" id="errorTrack"><canvas id="errorCanvas" aria-hidden="true"></canvas><i id="errorCursor"></i><input id="scrub" type="range" min="0" step="1" aria-label="Seek by MIDI frame"></div>
+        <div class="error-key"><span>■ Match</span><span>■ Missed</span><span>■ Extra</span></div>
+      </section>
+      <div class="map-head"><h3>Passage map</h3><span class="map-key" id="mapKey"></span></div>
+      <div class="map" id="map"><canvas aria-hidden="true" id="roll"></canvas><div id="markers"></div><div id="playhead"></div></div>
+      <div id="ruler" aria-hidden="true"></div>
+    </div>
+    <aside class="decisions">
+      <div class="kicker" id="panelKicker"></div><h2 id="panelTitle"></h2>
+      <div id="ideas"></div>
+      <div id="detail"></div>
+    </aside>
+  </section>
+  <section class="impact">
+    <div class="impact-head"><div class="kicker" id="impactLabel"></div><h2>Measured impact</h2></div>
+    <div class="metrics" id="metrics"></div>
+    <div class="bins-head"><h3>Change across the clip</h3><span>F1 points per 2 seconds</span></div>
+    <div id="windows"></div>
+    <div class="compare-row"><span id="selection"></span><button type="button" class="primary" id="compare">▶ &nbsp; Hear before &amp; after</button></div>
+    <details id="benchmark"><summary>Compare rehearsal strategies</summary><div id="strategies"></div></details>
+  </section>
+  <p class="foot">F1 measures agreement between the target and played keys at each frame, averaged over time and shown on a 100-point scale.</p>
+</main>
+</body>
+</html>
