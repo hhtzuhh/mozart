@@ -1,6 +1,6 @@
-# PianoMime Rehearsal
+# Mozart · A piano rehearsal agent
 
-Edit a local hand-trajectory window, replay it with PianoMime, and compare the realized key states with an earlier performance.
+Mozart helps a simulated pianist practice a difficult passage. Gemini watches the performance, compares the played notes with the score, and chooses a small change to a hand movement. PianoMime plays the entire clip again on a Modal GPU. The agent keeps the change only if the new performance scores higher.
 
 ## Open the rehearsal studio
 
@@ -10,12 +10,29 @@ The left video renders the target score on a piano roll. The right shows the syn
 
 To display a different completed engine run, install FFmpeg (including ffprobe), use a Python environment with NumPy and run `python demo/export_rehearsal.py /path/to/run --title "Clip title"` from this directory, then reload the page. The command replaces the bundled recording. Use `--output /path/to/staging` to export separately.
 
-From the parent workspace, run `python3 submission/demo/watch_matrix.py` to follow the current four-strategy engine run, then open [Strategy progress](demo/progress.html). The local watcher checks the experiment folder every three seconds and exits after the engine writes its final summary. Pass a different matrix output directory as an argument to follow another run. A saved Modal call marks submission. The engine reports the next checkpoint after the rollout arrives.
+## What changed after practice?
 
-## Project Structure
+In the first recorded round, Gemini identified a left-hand chord landing one white key too low. The agent shifted the left hand toward higher notes for frames 114–152. In the studio, select round 1 and compare the same passage before and after the edit. Full-clip F1 rose from **0.5772 to 0.6314** on that replay.
 
-- `src/` contains the submission source code.
-- [Project documentation](docs/PROJECT.md) covers the problem, solution, and demo walkthrough.
+| Performance | Best full-clip F1 | Retained take |
+| --- | ---: | --- |
+| Original | 0.5772 | Baseline |
+| Gemini chooses the passage | 0.6594 | Round 3 |
+| Error count chooses the passage | 0.6599 | Round 2 |
+
+Both strategies started from the same 19.6-second clip, `SomewhereOnlyWeKnow_8`, at seed 0 and tested three edits each. F1 compares target and played keys every 50 ms, counting both missing and extra notes, then averages the frame scores across the clip. The studio shows the Gemini-selected rounds.
+
+## Run the agent from a clone
+
+Run the commands below from the directory containing this README. The offline studio includes its own media. For a new rehearsal, supply the original left and right hand trajectory arrays for the task. The filenames end in `_left_hand_action_list.npy` and `_right_hand_action_list.npy`. Set a shell variable to the directory containing both files. Each example uses the same shell.
+
+```bash
+TRAJECTORIES=/absolute/path/to/your/trajectories
+```
+
+For Gemini calls, create a local `.env` in the repository root containing `GEMINI_APIKEY=your-key`. If your key file is elsewhere, pass its path with `--env-file`. The default looks in the directory where you start Python. Use a Gemini key with access to the configured Neon and Hydrogen models. Modal uses its own configured CLI credentials. The examples pass data paths explicitly and store generated files in the ignored `runs/` directory.
+
+The rehearsal loop is in `rehearse.py`, Gemini diagnosis and planning are in `src/rehearsal_plan.py`, and the T4 worker is in `modal_rollout.py`.
 
 ## Run on a GPU Host
 
@@ -25,7 +42,7 @@ Create a candidate from a pair of high-level trajectories. The example advances 
 
 ```bash
 python src/trajectory_patch.py SomewhereOnlyWeKnow_8 \
-  --source inputs/trajectories --output runs/candidate \
+  --source "$TRAJECTORIES" --output runs/candidate \
   --hand right --start-frame 120 --stop-frame 160 --offset -1
 ```
 
@@ -42,39 +59,41 @@ Each run writes `performance.mp4`, `trace.npz`, `rollout.log`, and `result.json`
 
 ## Run the First Pair on Modal
 
-From the parent workspace with the saved baseline and candidate trajectories, run this command in a terminal with a configured Modal account.
+Create the local candidate with the trajectory patch command above, then run the pair with a configured Modal account. The candidate preparation requires Python and NumPy. The remote run requires uv locally and uses two T4 workers.
 
 ```bash
-uv run --no-project --python 3.13 --with modal --with numpy modal run submission/modal_rollout.py
+uv run --no-project --python 3.11 --with modal==1.6.4 --with numpy==1.26.4 \
+  modal run modal_rollout.py --baseline "$TRAJECTORIES" \
+  --candidate runs/candidate --output runs/first-pair
 ```
 
-The first invocation builds the pinned PianoMime runtime and fetches its public assets. It then runs the original and candidate trajectories on two T4 workers using the same seed and software renderer. Outputs are downloaded to `experiments/pianomime/modal-right-advance-6-8/`. Use `--output` with a fresh path for another run. [Modal GPU documentation](https://modal.com/docs/guide/gpu)
+The first invocation builds the pinned PianoMime runtime and fetches its public assets. It then runs the original and candidate trajectories on two T4 workers using the same seed and software renderer. Outputs are downloaded to `runs/first-pair/`. Use `--output` with a fresh path for another run. [Modal GPU documentation](https://modal.com/docs/guide/gpu)
 
 ## Propose a Correction With Gemini
 
-From the parent workspace, set `GEMINI_APIKEY` in `.env`. Neon diagnoses the rollout and Hydrogen selects one supported timing adjustment. Pass the video and trace from the same rollout. Omit `--video` for the keys-only comparison.
+Neon diagnoses the rollout and Hydrogen selects one supported timing adjustment. Pass the video and trace from the same rollout. Omit `--video` for the keys-only comparison.
 
 ```bash
-python3.13 submission/src/gemini_proposal.py SomewhereOnlyWeKnow_8 \
-  --source experiments/pianomime/baseline/trajectories \
-  --trace experiments/pianomime/baseline/baseline_trace.npz \
-  --video experiments/pianomime/baseline/baseline.mp4 \
+python src/gemini_proposal.py SomewhereOnlyWeKnow_8 \
+  --source "$TRAJECTORIES" \
+  --trace runs/first-pair/baseline/trace.npz \
+  --video runs/first-pair/baseline/performance.mp4 \
   --start-frame 120 --stop-frame 160 \
-  --output experiments/pianomime/candidates/gemini-video
+  --output runs/gemini-video
 ```
 
 The output contains the candidate trajectories and `proposal.json` with the diagnosis and selected operation. Pass the directory as `--candidate` to the Modal command with a fresh `--output` to simulate and score the correction. [Gemini video input](https://aistudio.google.com/docs/video-understanding#inline-video) · [Structured output](https://aistudio.google.com/docs/structured-output)
 
 ## Rehearse the Whole Clip
 
-From the parent workspace, start both strategies from the same recorded baseline and matching hand trajectories. The command runs three candidate performances per strategy on Modal. Set `GEMINI_APIKEY` in the local `.env` file and configure the Modal CLI before running it.
+Start both strategies from the baseline generated by the Modal pair above, or pass an existing baseline directory containing matching `trace.npz`, `result.json`, and `performance.mp4` files. The command runs three candidate performances per strategy on Modal. Set `GEMINI_APIKEY` in the local `.env` file and configure the Modal CLI before running it.
 
 ```bash
 uv run --no-project --python 3.11 --with modal==1.6.4 --with numpy==1.26.4 \
-  python submission/rehearse.py \
-  --baseline experiments/pianomime/modal-gemini-video/baseline \
-  --trajectories experiments/pianomime/baseline/trajectories \
-  --rounds 3 --output experiments/pianomime/whole-clip-rehearsal-01
+  python rehearse.py \
+  --baseline runs/first-pair/baseline \
+  --trajectories "$TRAJECTORIES" \
+  --env-file .env --rounds 3 --output runs/whole-clip-rehearsal-01
 ```
 
 Neon receives the full performance video with audio and the score and played keys for every 50 ms frame. It proposes edits at specific times and cites key errors. Hydrogen selects one edit to test. Both strategies can move either hand toward higher or lower keys by half or one white-key spacing, or advance or delay its horizontal preparation by one frame. Each operation preserves the reference height and score timing.
@@ -87,13 +106,14 @@ On the 19.6-second development clip `SomewhereOnlyWeKnow_8` at seed 0, the basel
 
 ## Compare Practice Time Budgets
 
-Start four independent continuations of the completed error-count rehearsal from the parent workspace.
+Start four independent continuations of the completed error-count rehearsal.
 
 ```bash
 uv run --no-project --python 3.11 --with modal==1.6.4 --with numpy==1.26.4 \
-  python submission/timed_rehearsal.py \
-  --previous experiments/pianomime/whole-clip-rehearsal-01 \
-  --minutes 15 20 25 30 --output experiments/pianomime/timed-most-errors-01
+  python timed_rehearsal.py \
+  --previous runs/whole-clip-rehearsal-01 \
+  --initial-trajectories "$TRAJECTORIES" --env-file .env \
+  --minutes 15 20 25 30 --output runs/timed-most-errors-01
 ```
 
 All branches inherit the same retained trajectories, performance, previous trial scores, and last rejected performance. They start on a common clock after the Modal app initializes. Each branch calls Gemini independently and uses a T4 worker for its physical replays. Its budget includes model calls, queue time, simulation, download, and scoring. An edit is eligible for retention when its verified full-clip score arrives before the cutoff. A late model response is discarded. An unfinished GPU call is cancelled at the cutoff.
@@ -102,11 +122,12 @@ Each budget directory records scored trials with elapsed time, the best performa
 
 ## Compare four strategies by completed replays
 
-Run from the parent workspace with the same Gemini key and Modal credentials as above.
+Use the same baseline, trajectories, Gemini key, and Modal credentials as above.
 
 ```bash
 uv run --no-project --python 3.11 --with modal==1.6.4 --with numpy==1.26.4 \
-  python submission/practice_matrix.py --output experiments/pianomime/strategy-matrix-01
+  python practice_matrix.py --baseline runs/first-pair/baseline \
+  --trajectories "$TRAJECTORIES" --env-file .env --output runs/strategy-matrix-01
 ```
 
 | Strategy | Passage selection | Edits per replay |
@@ -119,3 +140,5 @@ uv run --no-project --python 3.11 --with modal==1.6.4 --with numpy==1.26.4 \
 Each strategy runs five independent branches from the original performance and empty trial history. The 15, 20, 25, 30 and 35 minute estimates correspond to 2, 3, 4, 5 and 6 completed replays. The twenty branches run concurrently, sharing up to nine T4 workers. Set `PIANOMIME_GPU_WORKERS` to adjust the worker pool for your workspace. Each branch waits for the assigned number of scored performances, including attempts that lower F1. A higher full-clip F1 retains the new trajectories. Strategy D makes one retention decision for the whole bundle.
 
 Each branch's `results.json` includes the actual elapsed time, trial scores and retained performance. Each round saves the model decisions, edited trajectories, GPU call ID, video, trace and score. Reusing the same output directory resumes interrupted work. The final `summary.json` records all twenty branches and eighty scores.
+
+While the matrix runs, start `python3 demo/watch_matrix.py runs/strategy-matrix-01` in a second terminal from the repository root and open [Strategy progress](demo/progress.html). The watcher reads local checkpoints every three seconds and exits when the final summary appears.
