@@ -1,0 +1,8 @@
+.mozart-header{justify-content:space-between;min-height:60px;height:auto;flex-wrap:wrap;padding-block:8px}
+.mozart-header .brand{text-decoration:none;font-size:1.2rem}
+.page-switch{display:flex;gap:3px;padding:3px;border:1px solid #51655c;border-radius:9px}
+.page-switch a{display:block;padding:7px 12px;border-radius:5px;color:#e1eae4;text-decoration:none;font-size:.875rem;font-weight:600}
+.page-switch a:hover{background:#344b42}
+.page-switch a[aria-current=page]{background:#c5edcd;color:#193627}
+.mozart-header a:focus-visible{outline:2px solid white;outline-offset:2px}
+@media(max-width:420px){.mozart-header{gap:5px}.page-switch a{padding:7px;font-size:.81rem}}

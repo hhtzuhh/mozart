@@ -1,10 +1,14 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Strategy progress · PianoMime</title>
-<link rel="stylesheet" href="studio.css"><script src="progress.js" defer></script>
+<title>Strategy progress · Mozart</title>
+<link rel="stylesheet" href="studio.css">
+  <link rel="stylesheet" href="navigation.css"><script src="progress.js" defer></script>
 </head><body>
-<header class="mast"><div class="wrap mast-inner"><div class="brand"><i class="brand-keys" aria-hidden="true"></i>PianoMime</div><span class="mast-divider"></span><span>Strategy progress</span><a class="studio-link" href="index.html">Recorded rehearsal ↗</a></div></header>
+<header class="mast"><div class="wrap mast-inner mozart-header">
+  <a class="brand" href="index.html" aria-label="Mozart rehearsal"><i class="brand-keys" aria-hidden="true"></i>Mozart</a>
+  <nav class="page-switch" aria-label="Mozart pages"><a href="index.html">Rehearsal</a><a href="progress.html" aria-current="page">Progress</a><a href="architecture.html">Architecture</a></nav>
+</div></header>
 <main class="wrap">
 <div class="hero"><div><div class="kicker" id="runName">Local engine checkpoints</div><h1>Strategy progress</h1></div><div class="score-count"><strong id="count">—</strong><span>replays scored</span></div></div>
 <p id="freshness" role="status">Reading the latest engine checkpoint…</p>
