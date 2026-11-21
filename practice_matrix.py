@@ -11,7 +11,8 @@ import modal
 
 from rehearse import (DIAGNOSER, HANDS, HAND_MOTIONS, LAB, PLANNER, UPSTREAM_SHA, api_key, app,
                       digest, load_trace, own_output, practice_trial, save_json, score, trajectory_name)
-from rehearsal_plan import MATRIX_STRATEGIES
+from rehearsal_plan import ADAPTIVE, MATRIX_STRATEGIES
+from trajectory_patch import ADAPTIVE_MOTIONS
 
 
 BUDGETS = {15: 2, 20: 3, 25: 4, 30: 5, 35: 6}
@@ -30,7 +31,7 @@ def trial_with_recovery(strategy, task, key, directory, source, parent, feedback
         except (RuntimeError, ValueError, modal.exception.Error) as error:
             msg = str(error)
             rejected = ("no new executable ideas" in msg or "Planner selected an unavailable edit" in msg)
-            remote_failed = isinstance(error, modal.exception.FunctionTimeoutError)
+            remote_failed = isinstance(error, (modal.exception.FunctionTimeoutError, modal.exception.OutputExpiredError))
             transient = any(t in msg.lower() for t in (
                 "http 429", "http 500", "http 502", "http 503", "http 504", "request failed",
                 "did not complete the interaction", "did not return a json object", "unavailable",
@@ -106,12 +107,16 @@ def main() -> None:
     parser.add_argument("--baseline", type=Path, default=LAB / "modal-gemini-video/baseline")
     parser.add_argument("--trajectories", type=Path, default=LAB / "baseline/trajectories")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--adaptive", action="store_true",
+                        help="Run only the six-replay Gemini adaptive strategy in a separate output directory")
     parser.add_argument("--env-file", type=Path, default=Path(".env"))
     args = parser.parse_args()
     root = args.output = args.output.resolve()
     target, played, _, seed = load_trace(args.baseline / "trace.npz")
     report = read(args.baseline / "result.json")
     base = score(target, played, 0, len(target))["f1"]
+    strategies = (ADAPTIVE,) if args.adaptive else MATRIX_STRATEGIES
+    budgets = {35: 6} if args.adaptive else BUDGETS
     if (report["task"] != args.task or report["seed"] != seed or not report["has_audio"]
             or abs(report["stock_metrics"]["f1"] - base) > 1e-10):
         raise ValueError("The baseline task, seed, stock F1 and audio must match")
@@ -120,13 +125,17 @@ def main() -> None:
                 "baseline_trace_sha256": digest(args.baseline / "trace.npz"),
                 "baseline_video_sha256": digest(args.baseline / "performance.mp4"),
                 "hand_sha256": {h: digest(args.trajectories / trajectory_name(args.task, h)) for h in HANDS},
-                "strategies": list(MATRIX_STRATEGIES), "models": [DIAGNOSER, PLANNER],
-                "motions": list(HAND_MOTIONS), "pianomime_commit": UPSTREAM_SHA,
-                "rounds_by_estimated_minutes": {str(m): n for m, n in BUDGETS.items()},
+                "strategies": list(strategies), "models": [DIAGNOSER, PLANNER],
+                "motions": list(ADAPTIVE_MOTIONS if args.adaptive else HAND_MOTIONS), "pianomime_commit": UPSTREAM_SHA,
+                "rounds_by_estimated_minutes": {str(m): n for m, n in budgets.items()},
                 "design": "Twenty independent branches. Every group starts at the unedited baseline with empty history.",
                 "stopping": "Finish every assigned physical replay and score it, regardless of elapsed time.",
                 "retention": "Strictly higher full-clip mean frame F1. Three-edit bundles are retained or rejected together.",
                 "cooldown": "After two consecutive rejections in the same two-second bin, skip it for one replay."}
+    if args.adaptive:
+        protocol.update(design="One adaptive branch from the original baseline. Gemini selects a tactic each round.",
+                        retention="Keep the parent with the strictly higher full-clip mean frame F1.")
+        del protocol["cooldown"]
     with own_output(root):
         stamp = root / "protocol.json"
         if stamp.exists() and read(stamp) != protocol:
@@ -137,13 +146,13 @@ def main() -> None:
             return
         save_json(stamp, protocol)
         key = api_key(args.env_file)
-        groups = [(s, m) for m in reversed(BUDGETS) for s in MATRIX_STRATEGIES]
-        with modal.enable_output(), app.run(), ThreadPoolExecutor(max_workers=len(groups)) as pool:
+        groups = [(s, m) for m in reversed(budgets) for s in strategies]
+        with modal.enable_output(), app.run(detach=True), ThreadPoolExecutor(max_workers=len(groups)) as pool:
             jobs = [pool.submit(run_group, args, s, m, key, base) for s, m in groups]
             results = [job.result() for job in as_completed(jobs)]
-        results.sort(key=lambda r: (MATRIX_STRATEGIES.index(r["strategy"]), r["estimated_minutes"]))
+        results.sort(key=lambda r: (strategies.index(r["strategy"]), r["estimated_minutes"]))
         total = sum(len(r["trials"]) for r in results)
-        if total != sum(BUDGETS.values()) * len(MATRIX_STRATEGIES):
+        if total != sum(budgets.values()) * len(strategies):
             raise RuntimeError("Missing scored replays")
         save_json(root / "summary.json", {"baseline_f1": base, "scored_replays": total, "groups": results})
         print(f"Completed {len(results)} groups and {total} scored replays", flush=True)

@@ -11,11 +11,12 @@ import numpy as np
 
 from compare_rollouts import load_trace
 from gemini_proposal import request_json
-from trajectory_patch import HANDS, HAND_MOTIONS, move_hand, trajectory_name
+from trajectory_patch import ADAPTIVE_MOTIONS, HANDS, HAND_MOTIONS, move_hand, trajectory_name
 
 
 STRATEGIES = ("gemini_windows", "most_errors")
 MATRIX_STRATEGIES = ("most_errors", "gemini_windows", "switch_on_stall", "gemini_three")
+ADAPTIVE = "gemini_adaptive"
 DIAGNOSER = "gemini-4-neon"
 PLANNER = "gemini-4-hydrogen"
 MENU = (
@@ -39,6 +40,25 @@ IDEAS_SCHEMA = {
     }}},
     "required": ["ideas"],
 }
+
+
+def adaptive_instructions(hands: dict, target: np.ndarray, played: np.ndarray) -> str:
+    # Include one reference pose per mismatching run, keyed by the exact frame.
+    poses = {}
+    for start, _, goal, actual in key_runs(target, played):
+        if goal != actual:
+            poses[start] = {hand: np.rint(path[start, 1, 1:] * 1000).astype(int).tolist()
+                            for hand, path in hands.items()}
+    return (
+        " Invent a practice tactic for each proposal. Give it a short descriptive tactic name. "
+        "Use prior local and full-clip scores to decide whether to repeat, refine or switch tactics. "
+        "In hypothesis say which pitches should change and which should be preserved. "
+        "You can also shift one reference fingertip by 11.75 mm toward higher or lower notes "
+        "with tip_1_higher through tip_5_lower. For a fingertip edit use a listed pose as "
+        "evidence_frame. Each array gives lateral Y positions in mm for tips 1..5 in index order. "
+        "Higher Y means higher pitch. These are reference poses, actual contacts are in the key trace. "
+        f"Reference poses by frame: {json.dumps(poses, separators=(',', ':'))}. "
+    )
 
 
 def save_json(path: Path, data: dict) -> None:
@@ -131,12 +151,21 @@ def make_plan(key: str, strategy: str, task: str, source: Path, performance: Pat
     hands = {hand: np.load(source / trajectory_name(task, hand), allow_pickle=False) for hand in HANDS}
     if any(array.shape != (len(target), 3, 6) for array in hands.values()):
         raise ValueError("The reference trajectories must match the performance length")
-    if strategy not in MATRIX_STRATEGIES:
+    adaptive = strategy == ADAPTIVE
+    if strategy not in MATRIX_STRATEGIES and not adaptive:
         raise ValueError(f"Unknown window strategy: {strategy}")
     region = select_region(strategy, target, played, history)
     triple = strategy == "gemini_three"
     amount = "four or five ranked" if triple else "two or three ranked"
     selection = "Choose the most promising passages anywhere in the entire performance."
+    motions = ADAPTIVE_MOTIONS if adaptive else HAND_MOTIONS
+    schema = IDEAS_SCHEMA
+    if adaptive:
+        selection += adaptive_instructions(hands, target, played)
+        fields = {**IDEA_FIELDS, "motion": {"type": "string", "enum": list(motions)},
+                  "tactic": {"type": "string"}}
+        schema = {"type": "object", "properties": {"ideas": {"type": "array", "items": {
+            "type": "object", "properties": fields, "required": list(fields)}}}, "required": ["ideas"]}
     if triple:
         selection += (" One replay will apply exactly three edits at once. Propose four or five distinct "
                       "passages across the clip, including at least three mutually disjoint time ranges. "
@@ -177,13 +206,15 @@ def make_plan(key: str, strategy: str, task: str, source: Path, performance: Pat
     tried = {edit_id(r) for r in history if r["parent_id"] == parent_hash and not triple}
     bundles = []
     for attempt in range(3 if triple else 2):
-        diagnosis = model_call(directory / f"diagnosis-{attempt + 1}.json", key, DIAGNOSER, prompt, media, IDEAS_SCHEMA, deadline)
+        diagnosis = model_call(directory / f"diagnosis-{attempt + 1}.json", key, DIAGNOSER, prompt, media, schema, deadline)
         for idea in diagnosis.get("ideas", [])[:5 if triple else 3]:
             a, b, e = (idea.get(k) for k in ("start_frame", "stop_frame", "evidence_frame"))
             hand, motion = idea.get("hand"), idea.get("motion")
             if not all(type(v) is int for v in (a, b, e)) or not (0 <= a <= e < b <= len(target) and 2 <= b-a <= 80):
                 continue
-            if hand not in hands or motion not in HAND_MOTIONS or np.array_equal(target[e], played[e]):
+            if adaptive and not (isinstance(idea.get("tactic"), str) and idea["tactic"].strip()):
+                continue
+            if hand not in hands or motion not in motions or np.array_equal(target[e], played[e]):
                 continue
             if region and not a <= region["anchor"] < b:
                 continue
@@ -221,6 +252,9 @@ def make_plan(key: str, strategy: str, task: str, source: Path, performance: Pat
             f"Edits by ID: {json.dumps(dict(enumerate(ideas, 1)))}\n"
             f"Available bundles of edit IDs: {json.dumps(dict(zip(choices, options)))}"
         )
+    if adaptive:
+        planning_prompt += ("\nChoose this round's tactic. Explain why the current evidence and previous "
+                            "outcomes support keeping or changing the approach. Name the expected note-level effect.")
     selection = model_call(directory / "planner.json", key, PLANNER, planning_prompt, [], planner_schema, deadline)
     choice = selection.get("choice")
     if type(choice) is not int or choice not in choices:

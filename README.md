@@ -142,3 +142,16 @@ Each strategy runs five independent branches from the original performance and e
 Each branch's `results.json` includes the actual elapsed time, trial scores and retained performance. Each round saves the model decisions, edited trajectories, GPU call ID, video, trace and score. Reusing the same output directory resumes interrupted work. The final `summary.json` records all twenty branches and eighty scores.
 
 While the matrix runs, start `python3 demo/watch_matrix.py runs/strategy-matrix-01` in a second terminal from the repository root and open [Strategy progress](demo/progress.html). The watcher reads local checkpoints every three seconds and exits when the final summary appears.
+
+### Six-round adaptive rehearsal
+
+From this repository, run the following against the same baseline and trajectories used for the four-strategy matrix.
+
+```sh
+uv run --no-project --python 3.11 --with modal==1.6.4 --with numpy==1.26.4 \
+  python practice_matrix.py --adaptive --baseline runs/first-pair/baseline \
+  --trajectories "$TRAJECTORIES" --output runs/adaptive-01
+python3 demo/watch_matrix.py runs/strategy-matrix-01 --adaptive-run runs/adaptive-01
+```
+
+Start the watcher in a second terminal and select **6 rounds** on the [strategy progress page](demo/progress.html) to compare the five branches from the shared baseline. In the adaptive branch, Gemini freely chooses one passage per round, proposes hand adjustments and selects one to try. The action menu includes the six original whole-hand motions and lateral adjustments to a single fingertip. Each round lists its time range and the movement applied. Expand an adaptive tactic to see Gemini’s reasoning, the full-clip score and the target, previous and replayed pitches at the same frame.

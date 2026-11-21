@@ -18,7 +18,7 @@ from modal_rollout import LAB, OUTPUTS, SUBMISSION, UPSTREAM_SHA, app, rollout
 sys.path.insert(0, str(SUBMISSION / "src"))
 from compare_rollouts import compare, load_trace, score
 from gemini_proposal import api_key
-from rehearsal_plan import DIAGNOSER, PLANNER, STRATEGIES, edit_id, make_plan, save_json, seconds_left
+from rehearsal_plan import ADAPTIVE, DIAGNOSER, PLANNER, STRATEGIES, edit_id, make_plan, save_json, seconds_left
 from trajectory_patch import HANDS, HAND_MOTIONS, trajectory_name, write_edits
 
 
@@ -109,6 +109,15 @@ def practice_trial(strategy: str, task: str, key: str, directory: Path, source: 
                                     "trial_window_f1": score(target, after, start, stop)["window_f1"]})
     if strategy == "switch_on_stall":
         record["rule_start"] = plan["rule_region"]["start_frame"]
+    if strategy == ADAPTIVE:
+        record.update(tactic=edits[0]["tactic"], hypothesis=edits[0]["hypothesis"],
+                      rationale=plan["rationale"])
+        frame = edits[0]["evidence_frame"]
+        target, before, _, _ = load_trace(parent / "trace.npz")
+        _, after, _, _ = load_trace(performance / "trace.npz")
+        record["note_check"] = {"frame": frame, **{
+            label: (keys[frame].nonzero()[0] + 21).tolist()
+            for label, keys in (("target", target), ("before", before), ("after", after))}}
     return record, candidate, performance
 
 

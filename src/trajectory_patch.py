@@ -17,17 +17,28 @@ LATERAL_PITCHES = {
 }
 PREPARATION_OFFSETS = {"prepare_earlier": -1, "prepare_later": 1}
 HAND_MOTIONS = (*LATERAL_PITCHES, *PREPARATION_OFFSETS)
+TIP_SHIFTS = {
+    f"tip_{tip}_{direction}": (tip, sign * WHITE_KEY_PITCH_M / 2)
+    for tip in range(1, 6)
+    for direction, sign in (("higher", 1), ("lower", -1))
+}
+ADAPTIVE_MOTIONS = (*HAND_MOTIONS, *TIP_SHIFTS)
 
 
 def move_hand(trajectory: np.ndarray, start: int, stop: int, motion: str) -> np.ndarray:
     if not 0 <= start < stop <= len(trajectory) or stop - start < 2:
         raise ValueError("Select at least two frames within the trajectory")
     result = trajectory.copy()
-    if motion in LATERAL_PITCHES:
+    if motion in LATERAL_PITCHES or motion in TIP_SHIFTS:
         length = stop - start
         ramp = np.minimum(np.arange(1, length + 1), np.arange(length, 0, -1))
-        offsets = np.minimum(ramp / 4, 1) * (WHITE_KEY_PITCH_M * LATERAL_PITCHES[motion])
-        result[start:stop, 1, :] += offsets[:, None]
+        weight = np.minimum(ramp / 4, 1)
+        if motion in TIP_SHIFTS:
+            tip, distance = TIP_SHIFTS[motion]
+            result[start:stop, 1, tip] += weight * distance
+        else:
+            offsets = weight * (WHITE_KEY_PITCH_M * LATERAL_PITCHES[motion])
+            result[start:stop, 1, :] += offsets[:, None]
     elif motion in PREPARATION_OFFSETS:
         indices = np.clip(np.arange(start, stop) - PREPARATION_OFFSETS[motion], start, stop - 1)
         result[start:stop, :2, :] = trajectory[indices, :2, :]
@@ -138,7 +149,7 @@ def main() -> None:
     edit = parser.add_mutually_exclusive_group(required=True)
     edit.add_argument("--offset", type=int, choices=(-1, 1),
                       help="Shift the entire hand reference by one frame")
-    edit.add_argument("--motion", choices=HAND_MOTIONS, help="Edit the horizontal hand path")
+    edit.add_argument("--motion", choices=ADAPTIVE_MOTIONS, help="Edit the horizontal hand or fingertip path")
     args = parser.parse_args()
     try:
         decision = write_candidate(

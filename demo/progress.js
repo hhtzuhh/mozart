@@ -3,17 +3,31 @@
 const $ = id => document.getElementById(id);
 const titles = {
   most_errors: "Most errors first", gemini_windows: "Gemini selects",
-  switch_on_stall: "Switch after a stall", gemini_three: "Gemini selects three"
+  switch_on_stall: "Switch after a stall", gemini_three: "Gemini selects three",
+  gemini_adaptive: "Gemini adaptive"
 };
 const score = n => (n * 100).toFixed(2);
 const gain = n => (n > 0 ? "+" : "") + score(n);
 let budget, lastRender = "", budgetKey = "";
 let chartMode = "trial";
+let matrixFeed, adaptiveFeed;
+
+function selectedArms() {
+  const primary = matrixFeed?.groups ? matrixFeed : adaptiveFeed;
+  if (!primary?.groups) return [];
+  const groups = {...primary.groups};
+  if (adaptiveFeed?.run === primary.run && adaptiveFeed.song === primary.song &&
+      adaptiveFeed.baseline === primary.baseline && adaptiveFeed.groups?.gemini_adaptive) {
+    groups.gemini_adaptive = adaptiveFeed.groups.gemini_adaptive;
+  }
+  return Object.entries(groups).filter(([, group]) => group[budget]);
+}
 const seriesStyles = {
   most_errors:      {letter: "A", color: "#195ec9", shape: "circle"},
   gemini_windows:   {letter: "B", color: "#be5105", shape: "diamond"},
   switch_on_stall:  {letter: "C", color: "#943fa2", shape: "triangle"},
-  gemini_three:     {letter: "D", color: "#007c68", shape: "square"}
+  gemini_three:     {letter: "D", color: "#007c68", shape: "square"},
+  gemini_adaptive:  {letter: "E", color: "#463728", shape: "cross"}
 };
 const hiddenStrategies = new Set();
 function element(tag, text, cls) {
@@ -34,6 +48,7 @@ function mark(shape, x, y, r, color) {
   const paint = {fill:color, stroke:"white", "stroke-width":1.4};
   if (shape === "circle") return svgNode("circle", {cx:x, cy:y, r, ...paint});
   if (shape === "square") return svgNode("rect", {x:x-r, y:y-r, width:2*r, height:2*r, rx:1, ...paint});
+  if (shape === "cross") return svgNode("path", {d:`M ${x-r} ${y-r} l ${2*r} ${2*r} M ${x+r} ${y-r} l ${-2*r} ${2*r}`, stroke:color, "stroke-width":3});
   const corners = shape === "diamond"
     ? [[x,y-r*1.3], [x+r*1.3,y], [x,y+r*1.3], [x-r*1.3,y]]
     : [[x,y-r*1.3], [x+r*1.2,y+r], [x-r*1.2,y+r]];
@@ -65,9 +80,9 @@ function updateLegend(arms) {
 }
 
 function plotScores() {
-  const state = window.matrixSnapshot;
+  const state = matrixFeed?.groups ? matrixFeed : adaptiveFeed;
   if (!state?.groups || !budget) return;
-  const arms = Object.entries(state.groups);
+  const arms = selectedArms();
   const plot = $("f1Plot");
   updateLegend(arms);
   const visible = arms.filter(([name]) => !hiddenStrategies.has(name));
@@ -78,9 +93,7 @@ function plotScores() {
   const x = round => left + round / Number(budget) * (right - left);
   const scores = [state.baseline];
   for (const [, groups] of arms) {
-    for (const group of Object.values(groups)) {
-      for (const trial of group.history) scores.push(trial.f1);
-    }
+    for (const trial of groups[budget].history) scores.push(trial.f1);
   }
   const low = Math.max(0, Math.floor((Math.min(...scores) * 100 - 1) / 5) * 5);
   const high = Math.min(100, Math.ceil((Math.max(...scores) * 100 + 1) / 5) * 5);
@@ -170,27 +183,58 @@ for (const [id, mode] of [["trialMode", "trial"], ["bestMode", "best"]]) {
 }
 new ResizeObserver(plotScores).observe($("f1Plot"));
 
+function callLink(id) {
+  const link = element("a", "View call in Modal ↗");
+  link.href = "https://modal.com/id/" + encodeURIComponent(id);
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  return link;
+}
+
+function describeEdit(trial) {
+  const hand = trial.hand === "left" ? "Left" : "Right";
+  const when = (trial.startFrame * 0.05).toFixed(2) + "–" + (trial.stopFrame * 0.05).toFixed(2) + " s";
+  if (trial.motion.startsWith("prepare_")) {
+    return when + " · " + hand + " hand prepares 50 ms " + trial.motion.split("_")[1];
+  }
+  const tip = /^tip_([1-5])_/.exec(trial.motion);
+  const part = tip ? "fingertip " + tip[1] : "hand";
+  const distance = trial.motion.includes("one_key") ? "23.5 mm" : "11.75 mm";
+  const direction = trial.motion.includes("higher") ? "higher" : "lower";
+  return when + " · " + hand + " " + part + " moves " + distance + " toward the " + direction + " keys";
+}
+
+function updateWaitTimes(observed) {
+  for (const timer of $("arms").querySelectorAll("[data-submitted]")) {
+    const seconds = Math.max(0, Math.floor(observed - Number(timer.dataset.submitted)));
+    timer.textContent = "Waiting " + Math.floor(seconds / 60) + "m " + String(seconds % 60).padStart(2, "0") + "s";
+  }
+}
+
 function render() {
-  const state = window.matrixSnapshot;
+  const state = matrixFeed?.groups ? matrixFeed : adaptiveFeed || matrixFeed;
   if (!state) {
     $("freshness").textContent = "Start the local watcher with python3 submission/demo/watch_matrix.py from the workspace.";
     return;
   }
-  const age = Math.max(0, Date.now() / 1000 - state.observed);
-  const time = new Date(state.observed * 1000).toLocaleTimeString();
-  const freshness = state.finished ? "Experiment complete" : age > 12 ? "Updates paused · last snapshot" : "Watching engine files";
-  $("freshness").textContent = freshness + " · " + time;
-  $("runName").textContent = state.run + (state.song ? " / " + state.song : "");
+  $("runName").textContent = state.song || "";
   $("matrix").hidden = !!state.waiting;
   if (state.waiting) {
-    $("freshness").textContent += " · waiting for the run protocol";
+    $("freshness").textContent = "Waiting for rehearsal data";
     $("count").textContent = "—";
     return;
   }
-  $("count").textContent = state.scored + " / " + state.total;
-  const arms = Object.entries(state.groups);
-  const budgets = Object.keys(arms[0][1]).sort((a, b) => a - b);
-  if (!budgets.includes(budget)) budget = budgets[0];
+  const budgets = [...new Set(Object.values(state.groups).flatMap(Object.keys))].sort((a, b) => a - b);
+  if (!budgets.includes(budget)) budget = budgets.at(-1);
+  const arms = selectedArms();
+  const total = arms.length * Number(budget);
+  const scored = arms.reduce((sum, [, groups]) => sum + groups[budget].scored, 0);
+  const hasAdaptive = arms.some(([name]) => name === "gemini_adaptive");
+  const observed = hasAdaptive ? adaptiveFeed?.observed ?? state.observed : state.observed;
+  const status = scored === total ? "Complete" : Date.now() / 1000 - observed > 12 ? "Updates paused" : "In progress";
+  $("count").textContent = scored + " / " + total;
+  $("freshness").textContent = arms.length + " strategies × " + budget + " rounds · " + status;
+  $("chartTitle").textContent = "Full-song F1 · " + budget + "-round group";
   if (budgetKey !== budgets.join(",")) {
     budgetKey = budgets.join(",");
     $("budget").replaceChildren(...budgets.map(b => {
@@ -202,7 +246,10 @@ function render() {
   }
   Array.from($("budget").children).forEach((b, i) => b.setAttribute("aria-pressed", String(budgets[i] === budget)));
   const fingerprint = JSON.stringify([state.run, state.baseline, budget, arms.map(([, groups]) => groups[budget])]);
-  if (lastRender === fingerprint) return;
+  if (lastRender === fingerprint) {
+    updateWaitTimes(observed);
+    return;
+  }
   lastRender = fingerprint;
   plotScores();
   $("arms").replaceChildren(...arms.map(([name, groups]) => {
@@ -210,33 +257,68 @@ function render() {
     const card = element("article", undefined, "strategy-arm");
     card.append(element("h2", titles[name] || name), element("p", g.scored + " / " + budget + " rounds scored", "arm-meta"));
     const stage = g.scored < Number(budget) ? "Round " + (g.scored + 1) + " · " : "";
-    card.append(element("p", stage + g.phase + (g.retries ? " · retries " + g.retries : ""), "arm-phase"));
+    const phase = element("div", stage + g.phase + (g.retries ? " · retries " + g.retries : ""), "arm-phase");
+    if (g.waitingCall) {
+      const timer = element("span", "", "arm-wait");
+      timer.dataset.submitted = g.waitingCall.submitted;
+      phase.append(timer, callLink(g.waitingCall.id));
+    }
+    card.append(phase);
+    if (name === "gemini_adaptive") card.append(element("p", "Gemini chooses one passage and one hand or fingertip adjustment per round.", "arm-meta"));
+    for (const edit of g.currentEdits || []) card.append(element("p", describeEdit(edit), "round-edit"));
+    if (g.currentTactic && !g.currentEdits?.length) card.append(element("p", g.currentTactic));
     card.append(element("small", "Best full-clip F1 gain"), element("strong", gain(g.best - state.baseline) + " pts"),
-      element("p", score(state.baseline) + " → " + score(g.best) + (g.bestRound ? " · Take " + g.bestRound : " · Baseline"), "arm-meta"));
+      element("p", score(state.baseline) + " → " + score(g.best) + (g.bestRound ? " · Round " + g.bestRound : " · Baseline"), "arm-meta"));
     const list = element("ol");
     for (const trial of g.history) {
       const item = element("li");
-      const label = "Take " + trial.number;
+      const label = "Round " + trial.number;
       if (trial.video) {
         const link = element("a", label + " ▶");
         link.href = trial.video; link.target = "_blank"; link.rel = "noopener"; item.append(link);
       } else item.append(label);
       item.append(" · " + gain(trial.gain) + " pts · " + (trial.retained ? "Retained" : "Rejected"));
+      if (trial.callId) item.append(" · ", callLink(trial.callId));
+      const edits = trial.edits || (trial.hand ? [trial] : []);
+      for (const edit of edits) item.append(element("p", describeEdit(edit), "round-edit"));
+      if (trial.tactic) {
+        const details = element("details");
+        details.append(element("summary", trial.tactic));
+        if (trial.choice) details.append(element("p", "Gemini selected proposal " + trial.choice + " of " + trial.candidates + "."));
+        if (trial.rationale) details.append(element("p", trial.rationale));
+        const check = trial.noteCheck;
+        if (trial.parentF1 !== undefined) details.append(element("p", "Full-clip F1 · " + score(trial.parentF1) + " → " + score(trial.f1)));
+        if (check) {
+          const notes = pitches => pitches.map(n => ["C","C♯","D","D♯","E","F","F♯","G","G♯","A","A♯","B"][n % 12] + (Math.floor(n / 12) - 1)).join(" ") || "rest";
+          details.append(element("p", (edits.length ? "Key check" : trial.motion) + " · " + (check.frame * .05).toFixed(2) + " s"),
+            element("p", "Target · " + notes(check.target)), element("p", "Before · " + notes(check.before)),
+            element("p", "After · " + notes(check.after)));
+        }
+        item.append(details);
+      }
       list.append(item);
     }
     card.append(list);
     return card;
   }));
+  updateWaitTimes(observed);
 }
 
-function refresh() {
-  const script = document.createElement("script");
-  script.src = ".local/matrix-progress.js?t=" + Date.now();
-  script.onload = script.onerror = () => {
-    script.remove();
-    render();
-    if (!window.matrixSnapshot?.finished) setTimeout(refresh, 3000);
-  };
-  document.head.append(script);
+function readFeed(filename) {
+  return new Promise(resolve => {
+    const script = document.createElement("script");
+    script.src = ".local/" + filename + "?t=" + Date.now();
+    script.onload = () => { script.remove(); resolve(window.matrixSnapshot); };
+    script.onerror = () => { script.remove(); resolve(null); };
+    document.head.append(script);
+  });
+}
+
+async function refresh() {
+  // Both local watcher files assign the same global. Capture each before loading the next.
+  if (!matrixFeed?.finished) matrixFeed = await readFeed("matrix-progress-v2.js") || matrixFeed;
+  if (!adaptiveFeed?.finished) adaptiveFeed = await readFeed("adaptive-progress.js") || adaptiveFeed;
+  render();
+  if (!matrixFeed?.finished || !adaptiveFeed?.finished) setTimeout(refresh, 3000);
 }
 refresh();
