@@ -1,0 +1,39 @@
+flowchart TB
+    baseline(["Shared baseline<br/>Score, take and hand trajectories"])
+    a["A · Most errors first"]
+    b["B · Gemini selects"]
+    c["C · Switch after a stall"]
+    d["D · Gemini selects three"]
+    e["E · Gemini adaptive"]
+
+    baseline --> a & b & c & d & e
+    a & b & c & d & e --> round
+
+    subgraph round["One round per strategy"]
+        direction LR
+        neon["Gemini Neon<br/>Diagnose"]
+        hydrogen["Gemini Hydrogen<br/>Select edits"]
+        runner["Local runner<br/>Patch trajectories"]
+        modal["Modal T4 pool<br/>Replay full clip"]
+        neon --> hydrogen --> runner --> modal
+    end
+    round --> score{"Higher full-clip F1?"}
+    keep["Keep candidate"]
+    stay["Keep prior best"]
+    budget{"Six rounds<br/>scored?"}
+    score -->|Yes| keep --> budget
+    score -->|No| stay --> budget
+    budget -->|No · next round| round
+    budget -->|Yes| result(["Best take + round log"])
+
+    classDef terminal fill:#203d32,color:#ffffff,stroke:#203d32
+    classDef strategy fill:#ffffff,color:#21392f,stroke:#91a399
+    classDef gemini fill:#ecedfa,color:#323958,stroke:#8e94b5
+    classDef gpu fill:#d9efe0,color:#1b4833,stroke:#6f997c
+    classDef decision fill:#fff2dc,color:#4c3820,stroke:#bc9e66
+    class baseline,result terminal
+    class a,b,c,d,e strategy
+    class neon,hydrogen gemini
+    class modal gpu
+    class score,budget decision
+    style round fill:#f6f8f4,stroke:#cad4c9

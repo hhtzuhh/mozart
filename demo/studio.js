@@ -2,20 +2,53 @@
 
 const find = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
+function openStudio(personal) {
 const catalog = window.STRATEGY_SESSIONS || {};
 const picker = find("strategy");
-const requested = params.get("strategy") || "most_errors";
+const groupPicker = find("trainingGroup");
+const requested = personal?.strategy || params.get("strategy") || "most_errors";
 const selectedStrategy = Object.hasOwn(catalog, requested) ? requested
   : requested === "recorded" || !Object.keys(catalog).length ? "recorded" : "most_errors";
 picker.value = selectedStrategy;
 for (const option of picker.options) option.disabled = option.value !== "recorded" && !Object.hasOwn(catalog, option.value);
-picker.onchange = () => {
+function groupsFor(strategy) {
+  const entry = catalog[strategy];
+  if (!entry) return {};
+  // Older offline packages contain only the six-round branch.
+  return Array.isArray(entry.rounds) ? {6: entry} : entry;
+}
+function availableBudgets(strategy) {
+  if (strategy === "recorded") return [String(window.REHEARSAL.rounds.length)];
+  return Object.keys(groupsFor(strategy)).sort((a, b) => Number(a) - Number(b));
+}
+const budgets = personal ? [String(personal.budget)] : availableBudgets(selectedStrategy);
+const budget = budgets.includes(params.get("budget")) ? params.get("budget") : budgets.at(-1);
+for (const value of budgets) groupPicker.add(new Option(value + "-round run", value));
+groupPicker.value = budget;
+groupPicker.disabled = budgets.length === 1;
+function openRun(strategy, value) {
   const url = new URL(location.href);
-  url.searchParams.set("strategy", picker.value);
-  url.searchParams.set("round", find("rounds").dataset.selected || "1");
+  url.searchParams.set("strategy", strategy);
+  url.searchParams.set("budget", value);
+  url.searchParams.set("round", "1");
   location.href = url.href;
+}
+picker.onchange = () => {
+  const choices = availableBudgets(picker.value);
+  openRun(picker.value, choices.includes(budget) ? budget : choices.at(-1));
 };
-const matrix = catalog[selectedStrategy];
+groupPicker.onchange = () => openRun(selectedStrategy, groupPicker.value);
+if (personal) {
+  picker.disabled = true;
+  groupPicker.selectedOptions[0].textContent += " · " + new Date(personal.created * 1000).toLocaleString();
+  const history = document.createElement("a");
+  history.href = "live.html#" + personal.runId;
+  history.textContent = "My rehearsal history";
+  groupPicker.parentElement.append(history);
+  find("roundStatus").querySelector("a").href = history.href;
+  find("roundStatus").querySelector("a").textContent = history.textContent;
+}
+const matrix = personal || groupsFor(selectedStrategy)[budget];
 const session = matrix ? {...window.REHEARSAL, ...matrix, strategies:[]} : window.REHEARSAL;
 const el = (tag, text, cls) => {
   const node = document.createElement(tag);
@@ -36,11 +69,6 @@ function explain(parent, label, paragraphs) {
   for (const paragraph of paragraphs) details.append(el("p", paragraph));
   parent.append(details);
 }
-const motions = {
-  higher_one_key: "Shift up one white key", lower_one_key: "Shift down one white key",
-  higher_half_key: "Shift up half a white key", lower_half_key: "Shift down half a white key",
-  prepare_earlier: "Prepare 50 ms earlier", prepare_later: "Prepare 50 ms later"
-};
 const score = value => (value * 100).toFixed(2);
 function delta(before, after) {
   const n = Number(score(after - before));
@@ -52,7 +80,43 @@ function notes(pitches) {
 }
 function startStudio(data) {
   const rounds = data.rounds;
-  const roundLimit = matrix ? 6 : rounds.length;
+  const updateChart = rehearsalChart(find("replayChart"));
+  updateChart(rounds, Number(budget), data.baseline);
+  let personalState, publishedRounds = rounds.length;
+  if (personal && rounds.length < Number(budget)) {
+    async function pollPersonal() {
+      try {
+        const response = await fetch("/api/runs", {cache:"no-store"});
+        if (!response.ok) throw Error();
+        personalState = (await response.json()).find(run => run.id === personal.runId);
+        if (!personalState) throw Error();
+        const current = find("rounds").dataset.selected;
+        if (Number(current) > rounds.length) {
+          find("roundUpdate").textContent = personalState.failed || Number(current) === personalState.scored + 1
+            ? personalState.phase : "Waiting for this round's replay.";
+        }
+        if (personalState.scored > rounds.length) {
+          const next = await loadPersonal(personal.runId);
+          if (next.rounds.length > rounds.length) {
+            publishedRounds = next.rounds.length;
+            updateChart(next.rounds, Number(budget), data.baseline);
+            const url = new URL(location.href);
+            if (Number(current) > rounds.length && Number(current) <= next.rounds.length) {
+              url.searchParams.set("round",current); location.replace(url.href); return;
+            }
+            url.searchParams.set("round",String(rounds.length+1));
+            const link = find("newRounds");
+            link.href = url.href; link.textContent = "Open newly scored round " + (rounds.length+1); link.hidden = false;
+            if (next.rounds.length === personal.budget) return;
+          }
+        }
+        if (personalState.failed) return;
+      } catch { /* A worker may still be publishing the latest replay. */ }
+      setTimeout(pollPersonal, 3000);
+    }
+    setTimeout(pollPersonal, 0);
+  }
+  const roundLimit = Number(budget);
   const takePrefix = n => data.media?.[n] || "recording/take-" + n;
   const duration = data.frames * data.step;
   const seconds = frame => (frame * data.step).toFixed(2);
@@ -67,7 +131,7 @@ function startStudio(data) {
   const after = () => round() ? round().round : data.bestRound;
   const windows = () => round() ? round().windows : data.windows;
   const takeName = n => n === 0 ? "Robot baseline" : "Take " + n;
-  const actionName = idea => (idea.hand === "left" ? "Left" : "Right") + " · " + (motions[idea.motion] || idea.motion);
+  const actionName = idea => describeHandMotion(idea.hand, idea.motion);
 
   let activeTake = 0, sound = "robot", displayedFrame = -1, animation;
   const frameStates = spans => {
@@ -362,26 +426,60 @@ function startStudio(data) {
     explain(detail,"What Neon observed",[idea.observation,idea.hypothesis]);
     explain(detail,"Why Hydrogen chose the tested edit",[r.rationale]);
   }
-  let pendingTimer;
+  function showEdits(number, edits, outcome = "", scored = true) {
+    find("roundEdits").hidden = !edits.length;
+    find("editHeading").textContent = (scored ? "Applied" : "Selected") +
+      (edits.length > 1 ? " adjustments" : " adjustment") + " · Round " + number;
+    find("appliedEdits").replaceChildren(...edits.map(edit => el("li", describeEdit(edit, data.step))));
+    find("editTactic").textContent = outcome;
+    find("editTactic").hidden = !outcome;
+  }
+  function outcomeText(tactic, f1, retained) {
+    return [tactic, "Full-clip F1 " + score(f1), retained ? "Retained" : "Rejected"].filter(Boolean).join(" · ");
+  }
+  function statusPanel(visible) {
+    for (const node of document.querySelectorAll(".console,.impact,.foot")) node.hidden = visible;
+    find("songReference").hidden = visible || !data.scoreAudio;
+    find("roundStatus").hidden = !visible;
+    find("guide").disabled = visible || !rounds.length;
+  }
+  let pendingTimer, allScored = rounds.length === roundLimit;
   function refreshPending(i) {
-    if (index !== i || selectedStrategy !== "gemini_adaptive") return;
+    if (personal || index !== i || selectedStrategy !== "gemini_adaptive") return;
     const script = el("script");
     script.src = ".local/adaptive-progress.js?t=" + Date.now();
     script.onload = () => {
       script.remove();
       if (index !== i) return;
-      const group = window.matrixSnapshot?.groups?.gemini_adaptive?.[6];
-      const trial = group?.history.find(t => t.number === i + 1);
-      if (trial) {
-        find("roundUpdate").textContent = [trial.tactic, "Full-clip F1 " + score(trial.f1), trial.retained ? "Retained" : "Rejected"].filter(Boolean).join(" · ");
-        if (trial.video) {
-          find("recentTake").src = trial.video;
-          find("recentTake").hidden = false;
-        }
-      } else {
-        if (group) find("roundUpdate").textContent = i === group.scored ? group.phase : "Waiting for earlier rounds to finish.";
-        pendingTimer = setTimeout(() => refreshPending(i), 3000);
+      const snapshot = window.matrixSnapshot;
+      if (!snapshot || snapshot.song !== data.task || snapshot.baseline !== data.baseline) return;
+      const group = snapshot.groups?.gemini_adaptive?.[budget];
+      if (!group) return;
+      const bestView = i === roundLimit;
+      const number = bestView ? group.bestRound : i + 1;
+      const trial = group.history.find(t => t.number === number);
+      if (group.scored === roundLimit) {
+        allScored = true;
+        find("rounds").lastElementChild.textContent = "Final performance";
       }
+      if (trial && (!bestView || number > rounds.length)) {
+        if (bestView && find("roundStatus").hidden) { stopAndPause(); statusPanel(true); }
+        find("statusTitle").textContent = picker.selectedOptions[0].text +
+          (bestView ? " · Best retained · Round " : " · Round ") + number;
+        const edits = trial.edits || (trial.hand ? [trial] : []);
+        showEdits(number, edits);
+        find("roundUpdate").textContent = outcomeText(trial.tactic, trial.f1, trial.retained);
+        const recent = find("recentTake");
+        if (trial.video && recent.getAttribute("src") !== trial.video) {
+          recent.src = trial.video;
+          recent.hidden = false;
+        }
+      } else if (!bestView) {
+        const current = i === group.scored;
+        find("roundUpdate").textContent = current ? group.phase : "Waiting for earlier rounds to finish.";
+        showEdits(number, current ? group.currentEdits || [] : [], "", false);
+      }
+      if (!allScored && (bestView || !trial)) pendingTimer = setTimeout(() => refreshPending(i), 3000);
     };
     script.onerror = () => { script.remove(); };
     document.head.append(script);
@@ -393,25 +491,31 @@ function startStudio(data) {
     const nav=find("rounds"); nav.replaceChildren();
     nav.dataset.selected = i === roundLimit ? "final" : String(i + 1);
     const labels=Array.from({length:roundLimit}, (_, n) => "Round " + (n+1));
-    labels.push(rounds.length < roundLimit ? "Best so far" : "Final performance");
+    labels.push(allScored ? "Final performance" : "Best so far");
     labels.forEach((text,n)=>nav.append(button(text,"tab",()=>{
       stopAndPause(); showView(n);
     },index===n)));
-    for (const node of document.querySelectorAll(".console,.impact,.foot")) node.hidden = pending;
-    find("songReference").hidden = pending || !data.scoreAudio;
-    find("roundStatus").hidden = !pending;
-    find("guide").disabled = pending || !rounds.length;
+    statusPanel(pending);
     const recent = find("recentTake");
     recent.pause();
     recent.hidden = true;
     if (recent.hasAttribute("src")) { recent.removeAttribute("src"); recent.load(); }
     if (pending) {
+      showEdits(i + 1, []);
       find("statusTitle").textContent = picker.selectedOptions[0].text + " · Round " + (i + 1);
-      find("roundUpdate").textContent = "This round has no packaged replay yet.";
+      if (personal && i < publishedRounds) {
+        const url = new URL(location.href);
+        url.searchParams.set("round", String(i+1)); location.replace(url.href); return;
+      }
+      find("roundUpdate").textContent = personal ? "Waiting for this round’s replay." : "This round has no packaged replay yet.";
       refreshPending(i);
       return;
     }
     const r=round();
+    const take = r || rounds.find(t => t.round === data.bestRound);
+    const applied = take ? take.edits || (take.choices || [take.choice]).map(id => take.ideas[id]) : [];
+    showEdits(take?.round, applied, take ? outcomeText(take.tactic, take.trial_f1, take.adopted) : "");
+    if (!r && rounds.length < roundLimit) refreshPending(i);
     if(r){
       ideaIndex=r.choice;
       const idea=r.ideas[ideaIndex];
@@ -484,8 +588,9 @@ function startStudio(data) {
   };
   new ResizeObserver(drawRoll).observe(find("map"));
   const requestedRound = params.get("round");
-  const first = requestedRound === "final" ? roundLimit : Number(requestedRound) - 1;
-  drawErrors(); showView(Number.isInteger(first) && first >= 0 && first <= roundLimit ? first : 0); drawRoll();
+  const first = Number(requestedRound) - 1;
+  drawErrors(); showView(requestedRound === "final" ? roundLimit
+    : Number.isInteger(first) && first >= 0 && first < roundLimit ? first : 0); drawRoll();
 }
 if(session?.frames && session?.playedNotes) startStudio(session);
 else {
@@ -494,3 +599,38 @@ else {
   find("guide").disabled=true;
   find("compare").disabled=true;
 }
+
+}
+
+async function loadPersonal(id) {
+  if (!/^[0-9a-f]{32}$/.test(id)) throw Error("Invalid rehearsal ID.");
+  const response = await fetch(".local/replays/" + id + "/session.json", {cache:"no-store"});
+  if (!response.ok) throw Error("The personal replay is being prepared.");
+  const replay = await response.json();
+  if (replay.runId !== id) throw Error("Rehearsal ID mismatch.");
+  return replay;
+}
+
+async function openPersonal(id) {
+  document.body.classList.add("loading-replay");
+  try {
+    const replay = await loadPersonal(id);
+    document.body.classList.remove("loading-replay");
+    find("notice").hidden = true;
+    openStudio(replay);
+  } catch (error) {
+    let message = error.message;
+    let retry = false;
+    try {
+      const response = await fetch("/api/runs", {cache:"no-store"});
+      if (!response.ok) throw Error();
+      const run = (await response.json()).find(run => run.id === id);
+      message = run ? (run.failed ? run.phase : "Preparing your rehearsal · " + run.phase) : "This rehearsal could not be found.";
+      retry = !!run && !run.failed;
+    } catch { message = "Open your rehearsal from the local Live studio."; }
+    find("notice").textContent = message; find("notice").hidden = false;
+    if (retry) setTimeout(() => openPersonal(id), 3000);
+  }
+}
+if (params.has("replay")) openPersonal(params.get("replay"));
+else openStudio(null);

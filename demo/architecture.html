@@ -8,8 +8,6 @@
   <link rel="stylesheet" href="studio.css">
   <link rel="stylesheet" href="architecture.css">
   <link rel="stylesheet" href="navigation.css">
-  <script defer src="recording/session.js"></script>
-  <script defer src="architecture.js"></script>
 </head>
 <body>
 <header class="mast"><div class="wrap mast-inner mozart-header">
@@ -17,49 +15,13 @@
   <nav class="page-switch" aria-label="Mozart pages"><a href="index.html">Rehearsal</a><a href="progress.html">Progress</a><a href="architecture.html" aria-current="page">Architecture</a></nav>
 </div></header>
 <main class="wrap architecture">
-  <div class="arch-intro">
-    <h1>System architecture</h1>
-    <p>Mozart watches a simulated pianist, chooses a change to its hand movements, and listens to the next take. Each practice strategy runs its own rehearsal loop.</p>
-  </div>
-
-  <section class="signal-flow" aria-labelledby="loop-title">
-    <h2 id="loop-title">Inside one rehearsal round</h2>
-    <ol class="signal-stages">
-      <li><small>Gemini · Neon</small><h3>Diagnose</h3><p>Read the target and played keys alongside the performance video and audio. Identify a passage, hand, and movement to test.</p></li>
-      <li><small>Gemini · Hydrogen</small><h3>Choose an edit</h3><p>Select from the proposed changes. The local runner applies the selection to a copy of the retained hand trajectories.</p></li>
-      <li><small>Modal · NVIDIA T4</small><h3>Replay</h3><p>PianoMime plays the full score with the edited trajectories and the same seed. The worker returns a video, key trace, log, and metrics.</p></li>
-      <li><small>Local runner</small><h3>Score</h3><p>Compare the replay with its parent across the entire clip. A higher mean frame F1 makes this take the starting point for the next round.</p></li>
-    </ol>
-    <p class="return-path"><span aria-hidden="true">↶</span> Next round uses the retained take and feedback from the previous trial.</p>
-  </section>
-
-  <div class="arch-pair">
-    <section class="parallel-panel">
-      <h2>Where calls run in parallel</h2>
-      <p>The four-strategy matrix starts independent branches from the same baseline. Each branch calls Gemini and submits its own replay to a shared Modal worker pool. Within one branch, the next round waits for the score.</p>
-      <dl class="pool-config">
-        <div><dt>Strategies</dt><dd>4</dd></div>
-        <div><dt>Replay budgets</dt><dd>2–6 <small>rounds</small></dd></div>
-        <div><dt>Independent branches</dt><dd>20</dd></div>
-        <div><dt>Default GPU limit</dt><dd>9 <small>T4s</small></dd></div>
-      </dl>
-      <a href="progress.html">View strategy progress</a>
-    </section>
-    <section class="trace-panel" id="recorded-trace" hidden>
-      <div class="trace-heading"><h2>A recorded decision</h2><label>Round <select id="trace-round"></select></label></div>
-      <p id="trace-song"></p>
-      <div id="trace-detail" aria-live="polite">
-        <h3 id="trace-edit"></h3>
-        <p id="trace-passage"></p>
-        <dl class="trace-scores">
-          <div><dt>Parent F1</dt><dd id="trace-parent"></dd></div>
-          <div><dt>Trial F1</dt><dd id="trace-trial"></dd></div>
-          <div><dt>Decision</dt><dd id="trace-decision"></dd></div>
-        </dl>
-      </div>
-      <a href="index.html?strategy=recorded">Hear the recorded rehearsal</a>
-    </section>
-  </div>
+  <h1>System architecture</h1>
+  <figure class="flowchart">
+    <figcaption>Five strategies share a baseline. Each runs its own six-round rehearsal.</figcaption>
+    <div class="flow-scroll" tabindex="0" role="region" aria-label="Scrollable Mozart system flowchart">
+      <img src="architecture.svg" alt="One baseline feeds five strategies. Within each branch, Neon diagnoses the performance, Hydrogen selects changes, and the local runner edits the hand trajectories. Parallel Modal T4 workers replay the clip. A higher full-clip F1 retains the new take. Each strategy repeats from its best take until all six rounds are scored.">
+    </div>
+  </figure>
 </main>
 </body>
 </html>

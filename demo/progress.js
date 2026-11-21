@@ -12,11 +12,35 @@ let budget, lastRender = "", budgetKey = "";
 let chartMode = "trial";
 let matrixFeed, adaptiveFeed;
 
+function savedProgress() {
+  if (!window.REHEARSAL || !window.STRATEGY_SESSIONS) return null;
+  const groups = {};
+  for (const [strategy, collection] of Object.entries(window.STRATEGY_SESSIONS)) {
+    groups[strategy] = {};
+    for (const [limit, branch] of Object.entries(Array.isArray(collection.rounds) ? {6:collection} : collection)) {
+      const history = branch.rounds.map(r => ({
+        number:r.round, f1:r.trial_f1, gain:r.trial_f1-r.parent_f1, retained:r.adopted,
+        video:"index.html?" + new URLSearchParams({strategy,budget:limit,round:r.round})
+      }));
+      groups[strategy][limit] = {history,scored:history.length,best:branch.best,bestRound:branch.bestRound,
+        phase:history.length === Number(limit) ? "Complete" : "Saved checkpoint"};
+    }
+  }
+  return {groups, baseline:window.REHEARSAL.baseline, song:window.REHEARSAL.task, archived:true};
+}
+const archived = savedProgress();
+
+function progressSource() {
+  if (matrixFeed?.groups) return matrixFeed;
+  if (adaptiveFeed?.groups) return adaptiveFeed;
+  return archived || matrixFeed || adaptiveFeed;
+}
+
 function selectedArms() {
-  const primary = matrixFeed?.groups ? matrixFeed : adaptiveFeed;
+  const primary = progressSource();
   if (!primary?.groups) return [];
   const groups = {...primary.groups};
-  if (adaptiveFeed?.run === primary.run && adaptiveFeed.song === primary.song &&
+  if (adaptiveFeed?.groups && adaptiveFeed.run === primary.run && adaptiveFeed.song === primary.song &&
       adaptiveFeed.baseline === primary.baseline && adaptiveFeed.groups?.gemini_adaptive) {
     groups.gemini_adaptive = adaptiveFeed.groups.gemini_adaptive;
   }
@@ -80,7 +104,7 @@ function updateLegend(arms) {
 }
 
 function plotScores() {
-  const state = matrixFeed?.groups ? matrixFeed : adaptiveFeed;
+  const state = progressSource();
   if (!state?.groups || !budget) return;
   const arms = selectedArms();
   const plot = $("f1Plot");
@@ -191,19 +215,6 @@ function callLink(id) {
   return link;
 }
 
-function describeEdit(trial) {
-  const hand = trial.hand === "left" ? "Left" : "Right";
-  const when = (trial.startFrame * 0.05).toFixed(2) + "–" + (trial.stopFrame * 0.05).toFixed(2) + " s";
-  if (trial.motion.startsWith("prepare_")) {
-    return when + " · " + hand + " hand prepares 50 ms " + trial.motion.split("_")[1];
-  }
-  const tip = /^tip_([1-5])_/.exec(trial.motion);
-  const part = tip ? "fingertip " + tip[1] : "hand";
-  const distance = trial.motion.includes("one_key") ? "23.5 mm" : "11.75 mm";
-  const direction = trial.motion.includes("higher") ? "higher" : "lower";
-  return when + " · " + hand + " " + part + " moves " + distance + " toward the " + direction + " keys";
-}
-
 function updateWaitTimes(observed) {
   for (const timer of $("arms").querySelectorAll("[data-submitted]")) {
     const seconds = Math.max(0, Math.floor(observed - Number(timer.dataset.submitted)));
@@ -212,7 +223,7 @@ function updateWaitTimes(observed) {
 }
 
 function render() {
-  const state = matrixFeed?.groups ? matrixFeed : adaptiveFeed || matrixFeed;
+  const state = progressSource();
   if (!state) {
     $("freshness").textContent = "Start the local watcher with python3 submission/demo/watch_matrix.py from the workspace.";
     return;
@@ -231,10 +242,10 @@ function render() {
   const scored = arms.reduce((sum, [, groups]) => sum + groups[budget].scored, 0);
   const hasAdaptive = arms.some(([name]) => name === "gemini_adaptive");
   const observed = hasAdaptive ? adaptiveFeed?.observed ?? state.observed : state.observed;
-  const status = scored === total ? "Complete" : Date.now() / 1000 - observed > 12 ? "Updates paused" : "In progress";
+  const status = state.archived ? "Saved rehearsals" : scored === total ? "Complete" : Date.now() / 1000 - observed > 12 ? "Updates paused" : "In progress";
   $("count").textContent = scored + " / " + total;
   $("freshness").textContent = arms.length + " strategies × " + budget + " rounds · " + status;
-  $("chartTitle").textContent = "Full-song F1 · " + budget + "-round group";
+  $("chartTitle").textContent = "Full-clip F1 · " + budget + "-round group";
   if (budgetKey !== budgets.join(",")) {
     budgetKey = budgets.join(",");
     $("budget").replaceChildren(...budgets.map(b => {
@@ -321,4 +332,5 @@ async function refresh() {
   render();
   if (!matrixFeed?.finished || !adaptiveFeed?.finished) setTimeout(refresh, 3000);
 }
+render();
 refresh();

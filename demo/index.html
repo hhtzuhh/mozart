@@ -10,12 +10,14 @@
   <link rel="stylesheet" href="studio-strategies.css">
   <script src="recording/session.js" defer></script>
   <script src="recording/strategies/sessions.js" defer></script>
+  <script src="hand-motion.js" defer></script>
+  <script src="replay-chart.js" defer></script>
   <script src="studio.js" defer></script>
 </head>
 <body>
 <header class="mast"><div class="wrap mast-inner mozart-header">
   <a class="brand" href="index.html" aria-label="Mozart rehearsal"><i class="brand-keys" aria-hidden="true"></i>Mozart</a>
-  <nav class="page-switch" aria-label="Mozart pages"><a href="index.html" aria-current="page">Rehearsal</a><a href="progress.html">Progress</a><a href="architecture.html">Architecture</a></nav>
+  <nav class="page-switch" aria-label="Mozart pages"><a href="index.html" aria-current="page">Saved rehearsals</a><a href="live.html">Live rehearsal</a><a href="progress.html">Progress</a><a href="architecture.html">Architecture</a></nav>
 </div></header>
 <main class="wrap">
   <div class="hero">
@@ -38,8 +40,23 @@
       <option value="gemini_adaptive">E · Gemini adaptive</option>
       <option value="recorded">Original three-round demo</option>
     </select>
+    <label for="trainingGroup">Independent run</label>
+    <select id="trainingGroup"></select>
   </div>
+  <section id="replayChart" class="f1-chart" hidden aria-labelledby="replayChartHeading">
+    <div class="chart-head"><h2 id="replayChartHeading">Full-clip F1 by round</h2>
+      <div class="replay-legend"><span>Each replay</span><span>Best retained</span></div>
+    </div>
+    <svg role="img" aria-label="Full-clip F1 by round"></svg>
+    <a id="newRounds" hidden></a>
+  </section>
+  <h2 class="replay-heading">Round to replay</h2>
   <nav id="rounds" aria-label="Rehearsal rounds"></nav>
+  <section id="roundEdits" class="round-edits" aria-labelledby="editHeading" hidden>
+    <h2 id="editHeading"></h2>
+    <ul id="appliedEdits"></ul>
+    <p id="editTactic" hidden></p>
+  </section>
   <section class="round-status" id="roundStatus" hidden>
     <h2 id="statusTitle"></h2><p id="roundUpdate" role="status"></p>
     <video id="recentTake" controls playsinline hidden></video>

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Live rehearsal · Mozart</title>
+  <link rel="stylesheet" href="studio.css"><link rel="stylesheet" href="navigation.css"><link rel="stylesheet" href="live.css"><link rel="stylesheet" href="studio-strategies.css">
+  <script src="hand-motion.js" defer></script>
+  <script src="replay-chart.js" defer></script>
+  <script src="live.js" defer></script>
+</head>
+<body>
+<header class="mast"><div class="wrap mast-inner mozart-header">
+  <a class="brand" href="index.html"><i class="brand-keys" aria-hidden="true"></i>Mozart</a>
+  <nav class="page-switch" aria-label="Mozart pages"><a href="index.html">Saved rehearsals</a><a href="live.html" aria-current="page">Live rehearsal</a><a href="progress.html">Progress</a></nav>
+</div></header>
+<main class="wrap live-page">
+  <h1 id="pageTitle">Start a rehearsal</h1>
+  <form id="launch" class="live-form">
+    <label>Song<select id="song"><option value="SomewhereOnlyWeKnow_8">Somewhere Only We Know</option></select></label>
+    <label>Rounds per strategy<select id="budget"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option selected>6</option></select></label>
+    <fieldset class="strategy-buttons"><legend>Start a strategy</legend>
+      <button type="submit" name="strategy" value="most_errors" disabled>A · Most errors first</button>
+      <button type="submit" name="strategy" value="gemini_windows" disabled>B · Gemini selects</button>
+      <button type="submit" name="strategy" value="switch_on_stall" disabled>C · Switch after a stall</button>
+      <button type="submit" name="strategy" value="gemini_three" disabled>D · Gemini selects three</button>
+      <button type="submit" name="strategy" value="gemini_adaptive" disabled>E · Gemini adaptive</button>
+    </fieldset>
+  </form>
+  <p role="status" id="connection">Connecting to the local rehearsal engine…</p>
+  <section id="setup" hidden>
+    <p>Start the local server from the workspace, then <a href="http://127.0.0.1:8794/live.html">open the live studio</a>.</p>
+    <pre><code>MODAL_PROFILE=hhtzuhh uv run --no-project --python 3.11 --with modal==1.6.4 --with numpy==1.26.4 python submission/demo/live_studio.py</code></pre>
+  </section>
+  <section id="activity" class="live-activity" aria-labelledby="activityTitle" hidden>
+    <h2 id="activityTitle">Modal activity</h2>
+    <div class="activity-table"><table>
+      <thead><tr><th scope="col">Strategy</th><th scope="col">Scored</th><th scope="col">Current step</th><th scope="col">Modal</th></tr></thead>
+      <tbody id="activityRows"></tbody>
+    </table></div>
+  </section>
+  <section id="history" hidden>
+    <label class="run-picker">My rehearsal history<select id="runs"></select></label>
+    <a class="personal-link primary" id="personal" hidden>Replay my rehearsal</a>
+    <article class="live-result">
+      <h2 id="name"></h2><p id="phase" role="status"></p><progress id="bar"></progress><p id="counts"></p>
+  <section id="replayChart" class="f1-chart" hidden aria-labelledby="replayChartHeading">
+    <div class="chart-head"><h2 id="replayChartHeading">Full-clip F1 by round</h2>
+      <div class="replay-legend"><span>Each replay</span><span>Best retained</span></div>
+    </div>
+    <svg role="img" aria-label="Full-clip F1 by round"></svg>
+  </section>
+      <p id="tactic"></p><p id="edits"></p><a id="call" hidden target="_blank" rel="noopener">View GPU call ↗</a>
+      <ol id="trials"></ol>
+    </article>
+  </section>
+  <a class="sample-link" href="index.html">Browse saved examples by strategy</a>
+</main>
+</body></html>

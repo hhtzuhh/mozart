@@ -2,13 +2,25 @@
 
 Mozart helps a simulated pianist practice a difficult passage. Gemini watches the performance, compares the played notes with the score, and chooses a small change to a hand movement. PianoMime plays the entire clip again on a Modal GPU. The agent keeps the change only if the new performance scores higher.
 
+## Launch a live rehearsal
+
+From the workspace containing `submission/`, start the local server with the same Gemini key file and authenticated Modal profile used for the engine.
+
+```sh
+MODAL_PROFILE=hhtzuhh uv run --no-project --python 3.11 --with modal==1.6.4 --with numpy==1.26.4 python submission/demo/live_studio.py
+```
+
+Open [the live studio](http://127.0.0.1:8794/live.html), choose the song and one to six rounds, then press a strategy’s button to start that run. A, B, C, D and E each start independently from the original baseline. Press another button to practice both strategies concurrently. **Modal activity** shows each run’s phase, its App link when the worker connects and a GPU call link when Gemini has selected the edits for that round. Scored rounds keep their call links and videos.
+
+If a static preview is using port 8794, add `--port 8795` to the server command and open [the live studio on port 8795](http://127.0.0.1:8795/live.html). **Replay my rehearsal** plays the run selected in **My rehearsal history**, with its scored rounds in order. **Browse saved examples by strategy** opens the packaged rehearsal library. Live artifacts and the worker log are under `submission/runs/live/<run-id>/`. Use `--env-file PATH` if the Gemini key is in another file.
+
 ## Open the rehearsal studio
 
-Open [the rehearsal studio](demo/index.html) in a desktop browser. On macOS, run `open demo/index.html` from this directory. Choose a practice strategy, then select Round 1 through Round 6 to inspect the actual decision, score, and synchronized replay. A round without a packaged take shows its status. The original three-round recording is also available in the strategy menu. **Replay rehearsal** plays each tested passage in sequence and ends with the complete best take. Select a round or time window to explore it independently. Playback uses the packaged files and consumes zero GPU time.
+Open [the rehearsal studio](demo/index.html) in a desktop browser. On macOS, run `open demo/index.html` from this directory. Choose a practice strategy and an independent run, then select a round to inspect its decision, score, and synchronized replay. For example, the four-round run has four selectable replays. A round without a packaged take shows its status. The original three-round recording is also available in the strategy menu. **Replay rehearsal** plays each tested passage in sequence and ends with the complete best take. Select a round or time window to explore it independently. Playback uses the packaged files and consumes zero GPU time.
 
 The left video renders the target score on a piano roll. The right shows the synchronized robot recording. Press **Target piano** or **Robot** to replay the displayed passage from its start. Both buttons stop at the same endpoint. Seek to set a new listening start, inspect missed and extra pitches on the MIDI error strip, or download either MIDI track. Both MIDI files are reconstructed from the 50 ms evaluation key states.
 
-To display a different completed engine run, install FFmpeg (including ffprobe), use a Python environment with NumPy and run `python demo/export_rehearsal.py /path/to/run --title "Clip title"` from this directory, then reload the page. The command replaces the bundled recording. Use `--output /path/to/staging` to export separately. To refresh the six-round studio replays for the bundled song, run `python demo/export_strategy_studio.py /path/to/matrix-run /path/to/adaptive-run` against runs that share the bundled baseline.
+To display a different completed engine run, install FFmpeg (including ffprobe), use a Python environment with NumPy and run `python demo/export_rehearsal.py /path/to/run --title "Clip title"` from this directory, then reload the page. The command replaces the bundled recording. Use `--output /path/to/staging` to export separately. To refresh the studio replays for every round budget for the bundled song, run `python demo/export_strategy_studio.py /path/to/matrix-run /path/to/adaptive-run` against runs that share the bundled baseline.
 
 ## What changed after practice?
 

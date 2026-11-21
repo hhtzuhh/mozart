@@ -53,7 +53,7 @@ def trial_with_recovery(strategy, task, key, directory, source, parent, feedback
             time.sleep(min(60, 5 * len(retries)))
 
 
-def run_group(args, strategy: str, minutes: int, key: str, base_f1: float) -> dict:
+def run_group(args, strategy: str, minutes: int, key: str, base_f1: float, count: int | None = None) -> dict:
     root = args.output
     group = root / strategy / f"{minutes}min"
     group.mkdir(parents=True, exist_ok=True)
@@ -64,7 +64,8 @@ def run_group(args, strategy: str, minutes: int, key: str, base_f1: float) -> di
     history, timings = [], []
     parent, source, feedback = args.baseline, args.trajectories, None
     best_round, best = 0, base_f1
-    count = BUDGETS[minutes]
+    if count is None:
+        count = BUDGETS[minutes]
     state = {"strategy": strategy, "estimated_minutes": minutes, "required_rounds": count,
              "start_epoch": start, "status": "running", "trials": history, "timings": timings,
              "best_round": 0, "best_f1": base_f1, "best_performance": os.path.relpath(parent, root)}
@@ -101,7 +102,7 @@ def run_group(args, strategy: str, minutes: int, key: str, base_f1: float) -> di
     return state
 
 
-def main() -> None:
+def main(argv=None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--task", default="SomewhereOnlyWeKnow_8")
     parser.add_argument("--baseline", type=Path, default=LAB / "modal-gemini-video/baseline")
@@ -109,14 +110,22 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--adaptive", action="store_true",
                         help="Run only the six-replay Gemini adaptive strategy in a separate output directory")
+    parser.add_argument("--strategy", choices=(*MATRIX_STRATEGIES, ADAPTIVE),
+                        help="Run one independent branch with --rounds")
+    parser.add_argument("--rounds", type=int, choices=range(1, 7))
     parser.add_argument("--env-file", type=Path, default=Path(".env"))
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    if (args.strategy is None) != (args.rounds is None) or (args.strategy and args.adaptive):
+        parser.error("Pass --strategy and --rounds together, or use --adaptive separately")
     root = args.output = args.output.resolve()
     target, played, _, seed = load_trace(args.baseline / "trace.npz")
     report = read(args.baseline / "result.json")
     base = score(target, played, 0, len(target))["f1"]
     strategies = (ADAPTIVE,) if args.adaptive else MATRIX_STRATEGIES
     budgets = {35: 6} if args.adaptive else BUDGETS
+    if args.strategy:
+        strategies = (args.strategy,)
+        budgets = {5 * (args.rounds + 1): args.rounds}
     if (report["task"] != args.task or report["seed"] != seed or not report["has_audio"]
             or abs(report["stock_metrics"]["f1"] - base) > 1e-10):
         raise ValueError("The baseline task, seed, stock F1 and audio must match")
@@ -126,13 +135,15 @@ def main() -> None:
                 "baseline_video_sha256": digest(args.baseline / "performance.mp4"),
                 "hand_sha256": {h: digest(args.trajectories / trajectory_name(args.task, h)) for h in HANDS},
                 "strategies": list(strategies), "models": [DIAGNOSER, PLANNER],
-                "motions": list(ADAPTIVE_MOTIONS if args.adaptive else HAND_MOTIONS), "pianomime_commit": UPSTREAM_SHA,
+                "motions": list(ADAPTIVE_MOTIONS if ADAPTIVE in strategies else HAND_MOTIONS), "pianomime_commit": UPSTREAM_SHA,
                 "rounds_by_estimated_minutes": {str(m): n for m, n in budgets.items()},
                 "design": "Twenty independent branches. Every group starts at the unedited baseline with empty history.",
                 "stopping": "Finish every assigned physical replay and score it, regardless of elapsed time.",
                 "retention": "Strictly higher full-clip mean frame F1. Three-edit bundles are retained or rejected together.",
                 "cooldown": "After two consecutive rejections in the same two-second bin, skip it for one replay."}
-    if args.adaptive:
+    if args.strategy:
+        protocol["design"] = "One independent live rehearsal from the original baseline with empty history."
+    if args.adaptive or args.strategy == ADAPTIVE:
         protocol.update(design="One adaptive branch from the original baseline. Gemini selects a tactic each round.",
                         retention="Keep the parent with the strictly higher full-clip mean frame F1.")
         del protocol["cooldown"]
@@ -148,7 +159,7 @@ def main() -> None:
         key = api_key(args.env_file)
         groups = [(s, m) for m in reversed(budgets) for s in strategies]
         with modal.enable_output(), app.run(detach=True), ThreadPoolExecutor(max_workers=len(groups)) as pool:
-            jobs = [pool.submit(run_group, args, s, m, key, base) for s, m in groups]
+            jobs = [pool.submit(run_group, args, s, m, key, base, budgets[m]) for s, m in groups]
             results = [job.result() for job in as_completed(jobs)]
         results.sort(key=lambda r: (strategies.index(r["strategy"]), r["estimated_minutes"]))
         total = sum(len(r["trials"]) for r in results)
