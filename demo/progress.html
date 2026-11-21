@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Strategy progress · PianoMime</title>
+<link rel="stylesheet" href="studio.css"><script src="progress.js" defer></script>
+</head><body>
+<header class="mast"><div class="wrap mast-inner"><div class="brand"><i class="brand-keys" aria-hidden="true"></i>PianoMime</div><span class="mast-divider"></span><span>Strategy progress</span><a class="studio-link" href="index.html">Recorded rehearsal ↗</a></div></header>
+<main class="wrap">
+<div class="hero"><div><div class="kicker" id="runName">Local engine checkpoints</div><h1>Strategy progress</h1></div><div class="score-count"><strong id="count">—</strong><span>replays scored</span></div></div>
+<p id="freshness" role="status">Reading the latest engine checkpoint…</p>
+<section id="matrix" hidden>
+<div class="panel-head"><h2>Round budget</h2><div id="budget" class="switch" aria-label="Round budget per strategy"></div></div>
+<section class="f1-chart" aria-labelledby="chartTitle">
+  <div class="chart-head"><h2 id="chartTitle">Full-clip F1 by round</h2>
+    <div class="switch" role="group" aria-label="F1 measure">
+      <button id="trialMode" type="button" aria-pressed="true">Each replay</button>
+      <button id="bestMode" type="button" aria-pressed="false">Best retained</button>
+    </div>
+  </div>
+  <div id="legend" role="group" aria-label="Strategies shown on the chart"></div>
+  <svg id="f1Plot" role="img" aria-label="Strategy scores by round"></svg>
+  <details><summary>Exact scores by round</summary><div class="chart-data"><table id="scoreTable"></table></div></details>
+</section>
+<div id="arms"></div>
+</section>
+</main></body></html>

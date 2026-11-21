@@ -127,3 +127,36 @@ details p{margin:4px 0 8px;color:#384b45;line-height:1.52}
 #errorCursor{position:absolute;top:0;bottom:0;width:2px;background:#101d19;border-right:1px solid #fff;pointer-events:none}
 .error-key{font:400 .61rem var(--mono);color:var(--green);margin-top:4px}
 @media(max-width:520px){.screen-labels>div{align-items:flex-start;flex-direction:column}}
+
+.studio-link{margin-left:auto;color:#d7f2df;font-size:.8rem;text-underline-offset:3px}
+.score-count{text-align:right;display:grid;gap:3px}
+.score-count strong{font:500 2rem var(--mono)}
+.score-count span,.arm-meta,#freshness{color:var(--muted);font:400 .78rem var(--mono)}
+#freshness{margin-bottom:20px}
+#matrix .panel-head{justify-content:flex-start;flex-wrap:wrap}
+#arms{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,238px),1fr));gap:12px;margin-bottom:24px}
+.strategy-arm{padding:16px;border:1px solid var(--line);border-radius:10px;background:white}
+.strategy-arm h2{margin-bottom:6px}
+.arm-phase{margin:13px 0;padding:9px;background:#edf3ec;border-radius:5px;min-height:48px;font-size:.87rem}
+.strategy-arm strong,.strategy-arm small{display:block}
+.strategy-arm strong{font:500 1.8rem Georgia,serif}
+.strategy-arm ol{padding:0;list-style:none;margin:12px 0 0}
+.strategy-arm li{padding:6px 0;border-top:1px solid var(--line);font-size:.75rem}
+.strategy-arm a{color:var(--green)}
+
+.f1-chart{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px;margin:0 0 14px}
+.chart-head,#legend{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.chart-head{justify-content:space-between}
+#legend{gap:6px 10px;margin:14px 0 5px;font-size:.82rem}
+#legend label{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:6px;padding:6px 8px;cursor:pointer}
+#legend input{margin:0 2px 0 0;width:15px;height:15px;accent-color:var(--series)}
+#legend label:has(input:not(:checked)){color:var(--muted);background:#f5f6f5}
+#legend label:focus-within{outline:2px solid var(--series);outline-offset:1px}
+#f1Plot{display:block;width:100%;height:262px}
+#f1Plot text{fill:var(--muted);font:11px var(--mono)}
+#f1Plot .series-tag{font:650 13px system-ui,sans-serif}
+#f1Plot .series-value{fill:var(--ink);font:650 13px var(--mono)}
+.chart-data{overflow-x:auto}
+#scoreTable{border-collapse:collapse;width:100%;font-size:.79rem;font-variant-numeric:tabular-nums}
+#scoreTable th,#scoreTable td{padding:5px 7px;border-top:1px solid var(--line);text-align:right}
+#scoreTable th:first-child{text-align:left}
