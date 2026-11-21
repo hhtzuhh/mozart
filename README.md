@@ -4,15 +4,15 @@ Mozart helps a simulated pianist practice a difficult passage. Gemini watches th
 
 ## Open the rehearsal studio
 
-Open [the rehearsal studio](demo/index.html) in a desktop browser. On macOS, run `open demo/index.html` from this directory. The bundled 19.6-second recording plays locally and includes all three Gemini rounds, their actual decisions, score changes, and synchronized before/after passages. **Replay rehearsal** plays each tested passage in sequence and ends with the complete best take. Select a round or time window to explore it independently. Playback uses the packaged files and consumes zero GPU time.
+Open [the rehearsal studio](demo/index.html) in a desktop browser. On macOS, run `open demo/index.html` from this directory. Choose a practice strategy, then select Round 1 through Round 6 to inspect the actual decision, score, and synchronized replay. A round without a packaged take shows its status. The original three-round recording is also available in the strategy menu. **Replay rehearsal** plays each tested passage in sequence and ends with the complete best take. Select a round or time window to explore it independently. Playback uses the packaged files and consumes zero GPU time.
 
 The left video renders the target score on a piano roll. The right shows the synchronized robot recording. Press **Target piano** or **Robot** to replay the displayed passage from its start. Both buttons stop at the same endpoint. Seek to set a new listening start, inspect missed and extra pitches on the MIDI error strip, or download either MIDI track. Both MIDI files are reconstructed from the 50 ms evaluation key states.
 
-To display a different completed engine run, install FFmpeg (including ffprobe), use a Python environment with NumPy and run `python demo/export_rehearsal.py /path/to/run --title "Clip title"` from this directory, then reload the page. The command replaces the bundled recording. Use `--output /path/to/staging` to export separately.
+To display a different completed engine run, install FFmpeg (including ffprobe), use a Python environment with NumPy and run `python demo/export_rehearsal.py /path/to/run --title "Clip title"` from this directory, then reload the page. The command replaces the bundled recording. Use `--output /path/to/staging` to export separately. To refresh the six-round studio replays for the bundled song, run `python demo/export_strategy_studio.py /path/to/matrix-run /path/to/adaptive-run` against runs that share the bundled baseline.
 
 ## What changed after practice?
 
-In the first recorded round, Gemini identified a left-hand chord landing one white key too low. The agent shifted the left hand toward higher notes for frames 114–152. In the studio, select round 1 and compare the same passage before and after the edit. Full-clip F1 rose from **0.5772 to 0.6314** on that replay.
+In the first recorded round, Gemini identified a left-hand chord landing one white key too low. The agent shifted the left hand toward higher notes for frames 114–152. In the studio, select **Original three-round demo**, then **Round 1** and compare the same passage before and after the edit. Full-clip F1 rose from **0.5772 to 0.6314** on that replay.
 
 | Performance | Best full-clip F1 | Retained take |
 | --- | ---: | --- |
@@ -20,7 +20,7 @@ In the first recorded round, Gemini identified a left-hand chord landing one whi
 | Gemini chooses the passage | 0.6594 | Round 3 |
 | Error count chooses the passage | 0.6599 | Round 2 |
 
-Both strategies started from the same 19.6-second clip, `SomewhereOnlyWeKnow_8`, at seed 0 and tested three edits each. F1 compares target and played keys every 50 ms, counting both missing and extra notes, then averages the frame scores across the clip. The studio shows the Gemini-selected rounds.
+Both strategies started from the same 19.6-second clip, `SomewhereOnlyWeKnow_8`, at seed 0 and tested three edits each. F1 compares target and played keys every 50 ms, counting both missing and extra notes, then averages the frame scores across the clip. The original three-round demo shows the Gemini-selected rounds.
 
 ## Run the agent from a clone
 

@@ -1,0 +1,7 @@
+.strategy-picker{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:0 0 12px}
+.strategy-picker label{font-weight:650;font-size:.92rem}
+.strategy-picker select{font:inherit;color:var(--ink);background:white;border:1px solid #8fa99a;border-radius:6px;padding:7px 10px;max-width:100%}
+.round-status{background:white;border:1px solid var(--line);border-radius:12px;padding:20px}
+.round-status p{margin:10px 0;color:var(--muted)}
+.round-status a{color:var(--green)}
+.round-status video{max-width:720px;height:auto;margin-bottom:10px}

@@ -7,7 +7,9 @@
   <title>Rehearsal studio · Mozart</title>
   <link rel="stylesheet" href="studio.css">
   <link rel="stylesheet" href="navigation.css">
+  <link rel="stylesheet" href="studio-strategies.css">
   <script src="recording/session.js" defer></script>
+  <script src="recording/strategies/sessions.js" defer></script>
   <script src="studio.js" defer></script>
 </head>
 <body>
@@ -26,7 +28,23 @@
     <button type="button" id="playScore">▶ &nbsp; Listen from start</button>
     <a id="officialSong" target="_blank" rel="noopener noreferrer" hidden>Keane · official recording ↗</a>
   </section>
+  <div class="strategy-picker">
+    <label for="strategy">Practice strategy</label>
+    <select id="strategy">
+      <option value="most_errors">A · Most errors first</option>
+      <option value="gemini_windows">B · Gemini selects</option>
+      <option value="switch_on_stall">C · Switch after a stall</option>
+      <option value="gemini_three">D · Gemini selects three</option>
+      <option value="gemini_adaptive">E · Gemini adaptive</option>
+      <option value="recorded">Original three-round demo</option>
+    </select>
+  </div>
   <nav id="rounds" aria-label="Rehearsal rounds"></nav>
+  <section class="round-status" id="roundStatus" hidden>
+    <h2 id="statusTitle"></h2><p id="roundUpdate" role="status"></p>
+    <video id="recentTake" controls playsinline hidden></video>
+    <a href="progress.html">View strategy progress</a>
+  </section>
   <section class="console">
     <div class="media-col">
       <div class="panel-head"><h2>Performance</h2><div id="versions" class="switch" aria-label="Recording version"></div></div>

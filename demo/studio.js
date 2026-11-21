@@ -1,7 +1,22 @@
 "use strict";
 
 const find = id => document.getElementById(id);
-const session = window.REHEARSAL;
+const params = new URLSearchParams(location.search);
+const catalog = window.STRATEGY_SESSIONS || {};
+const picker = find("strategy");
+const requested = params.get("strategy") || "most_errors";
+const selectedStrategy = Object.hasOwn(catalog, requested) ? requested
+  : requested === "recorded" || !Object.keys(catalog).length ? "recorded" : "most_errors";
+picker.value = selectedStrategy;
+for (const option of picker.options) option.disabled = option.value !== "recorded" && !Object.hasOwn(catalog, option.value);
+picker.onchange = () => {
+  const url = new URL(location.href);
+  url.searchParams.set("strategy", picker.value);
+  url.searchParams.set("round", find("rounds").dataset.selected || "1");
+  location.href = url.href;
+};
+const matrix = catalog[selectedStrategy];
+const session = matrix ? {...window.REHEARSAL, ...matrix, strategies:[]} : window.REHEARSAL;
 const el = (tag, text, cls) => {
   const node = document.createElement(tag);
   if (text !== undefined) node.textContent = text;
@@ -37,6 +52,8 @@ function notes(pitches) {
 }
 function startStudio(data) {
   const rounds = data.rounds;
+  const roundLimit = matrix ? 6 : rounds.length;
+  const takePrefix = n => data.media?.[n] || "recording/take-" + n;
   const duration = data.frames * data.step;
   const seconds = frame => (frame * data.step).toFixed(2);
   const span = (a, b) => seconds(a) + "–" + seconds(b) + " s";
@@ -163,6 +180,7 @@ function startStudio(data) {
     displayedFrame = -1;
     active = video;
     video.hidden = false;
+    if (video.preload === "none") { video.preload = "metadata"; video.load(); }
     const ticket = ++sequence;
     function seek() {
       if (ticket !== sequence || active !== video) return;
@@ -180,7 +198,7 @@ function startStudio(data) {
     else video.addEventListener("loadedmetadata", seek, {once:true});
     const takeF1 = n === before() ? (round()?.parent_f1 ?? data.baseline) : (round()?.trial_f1 ?? data.best);
     find("takeLabel").textContent = takeName(n) + " · F1 " + score(takeF1);
-    find("takeMidi").href = "recording/take-" + n + ".mid";
+    find("takeMidi").href = takePrefix(n) + ".mid";
     const bar = find("versions");
     bar.replaceChildren();
     const versions = [[before(), round() ? "Before" : "Baseline"], [after(), round() ? "Trial" : "Best"]];
@@ -231,7 +249,7 @@ function startStudio(data) {
       comparing.phase = "after";
       setTake(after(), comparing.start, true);
     } else if (guided && round()) {
-      showView(index + 1);
+      showView(index + 1 < rounds.length ? index + 1 : roundLimit);
       if (round()) beginComparison();
       else {
         stopSequence();
@@ -270,7 +288,11 @@ function startStudio(data) {
     const metrics=find("metrics");
     metrics.replaceChildren();
     const values=[["Full-clip F1",score(base)+" → "+score(result)],["Full-clip gain",delta(base,result)+" pts"]];
-    if(r) values.push(["Tested passage F1",score(r.parent_window_f1)+" → "+score(r.trial_window_f1)],["Decision",r.adopted?"Retained":"Reverted"]);
+    if(r) {
+      if(r.edits) values.push(["Tested passages",String(r.edits.length)]);
+      else values.push(["Tested passage F1",score(r.parent_window_f1)+" → "+score(r.trial_window_f1)]);
+      values.push(["Decision",r.adopted?"Retained":"Reverted"]);
+    }
     else values.push(["Best performance",takeName(data.bestRound)]);
     for(const [label,value] of values){
       const m=el("div",undefined,"metric"); m.append(el("small",label),el("b",value)); metrics.append(m);
@@ -314,9 +336,10 @@ function startStudio(data) {
       ideas.append(el("p", "Select a time window below to hear the robot baseline alongside the best retained performance.", "scope"));
       return;
     }
+    find("map").style.minHeight = (r.ideas.length * 22 + 6) + "px";
     const ordered=r.ideas.map((idea,i)=>({idea,i})).sort((a,b)=>a.idea.start_frame-b.idea.start_frame);
     ordered.forEach(({idea,i},row)=>{
-      const chosen=i===r.choice;
+      const chosen=(r.choices || [r.choice]).includes(i);
       const stamp=span(idea.start_frame,idea.stop_frame);
       const card=button("","idea",()=>pickIdea(i),i===ideaIndex);
       const label=el("span",stamp,"stamp");
@@ -339,8 +362,55 @@ function startStudio(data) {
     explain(detail,"What Neon observed",[idea.observation,idea.hypothesis]);
     explain(detail,"Why Hydrogen chose the tested edit",[r.rationale]);
   }
+  let pendingTimer;
+  function refreshPending(i) {
+    if (index !== i || selectedStrategy !== "gemini_adaptive") return;
+    const script = el("script");
+    script.src = ".local/adaptive-progress.js?t=" + Date.now();
+    script.onload = () => {
+      script.remove();
+      if (index !== i) return;
+      const group = window.matrixSnapshot?.groups?.gemini_adaptive?.[6];
+      const trial = group?.history.find(t => t.number === i + 1);
+      if (trial) {
+        find("roundUpdate").textContent = [trial.tactic, "Full-clip F1 " + score(trial.f1), trial.retained ? "Retained" : "Rejected"].filter(Boolean).join(" · ");
+        if (trial.video) {
+          find("recentTake").src = trial.video;
+          find("recentTake").hidden = false;
+        }
+      } else {
+        if (group) find("roundUpdate").textContent = i === group.scored ? group.phase : "Waiting for earlier rounds to finish.";
+        pendingTimer = setTimeout(() => refreshPending(i), 3000);
+      }
+    };
+    script.onerror = () => { script.remove(); };
+    document.head.append(script);
+  }
   function showView(i) {
     index=i; binIndex=-1;
+    clearTimeout(pendingTimer);
+    const pending = i < roundLimit && !round();
+    const nav=find("rounds"); nav.replaceChildren();
+    nav.dataset.selected = i === roundLimit ? "final" : String(i + 1);
+    const labels=Array.from({length:roundLimit}, (_, n) => "Round " + (n+1));
+    labels.push(rounds.length < roundLimit ? "Best so far" : "Final performance");
+    labels.forEach((text,n)=>nav.append(button(text,"tab",()=>{
+      stopAndPause(); showView(n);
+    },index===n)));
+    for (const node of document.querySelectorAll(".console,.impact,.foot")) node.hidden = pending;
+    find("songReference").hidden = pending || !data.scoreAudio;
+    find("roundStatus").hidden = !pending;
+    find("guide").disabled = pending || !rounds.length;
+    const recent = find("recentTake");
+    recent.pause();
+    recent.hidden = true;
+    if (recent.hasAttribute("src")) { recent.removeAttribute("src"); recent.load(); }
+    if (pending) {
+      find("statusTitle").textContent = picker.selectedOptions[0].text + " · Round " + (i + 1);
+      find("roundUpdate").textContent = "This round has no packaged replay yet.";
+      refreshPending(i);
+      return;
+    }
     const r=round();
     if(r){
       ideaIndex=r.choice;
@@ -351,20 +421,15 @@ function startStudio(data) {
       binIndex=bins.reduce((best,w,i)=>w.after-w.before>bins[best].after-bins[best].before?i:best,0);
       selectedWindow=bins[binIndex];
     }
-    const nav=find("rounds"); nav.replaceChildren();
-    const labels=[...rounds.map(r=>"Round "+r.round),"Final performance"];
-    labels.forEach((text,n)=>nav.append(button(text,"tab",()=>{
-      stopAndPause(); showView(n);
-    },index===n)));
     renderDecisions(); renderImpact();
-    setTake(r?before():after(),r?r.ideas[ideaIndex].evidence_frame*data.step:0);
+    setTake(r && !matrix ? before() : after(), r ? r.ideas[ideaIndex].evidence_frame * data.step : 0);
   }
   for(const n of [0,...rounds.map(r=>r.round)]){
     for (const mode of ["robot", "score"]) {
       const v = el("video");
-      v.controls = true; v.preload = "metadata"; v.playsInline = true; v.hidden = true;
+      v.controls = true; v.preload = "none"; v.playsInline = true; v.hidden = true;
       v.setAttribute("aria-label", "Target and " + takeName(n) + " synchronized comparison");
-      v.src = "recording/take-" + n + (mode === "score" ? "-score" : "") + ".mp4";
+      v.src = takePrefix(n) + (mode === "score" ? "-score" : "") + ".mp4";
       v.addEventListener("error", () => notice("Could not load the synchronized recording for " + takeName(n) + "."));
       v.addEventListener("playing", () => { if (v === active) followPlayback(); });
       v.addEventListener("seeking", () => {
@@ -398,7 +463,7 @@ function startStudio(data) {
     }
   }
   find("title").textContent=data.title;
-  find("subtitle").textContent=duration.toFixed(1)+" s clip  /  "+rounds.length+" rehearsal rounds";
+  find("subtitle").textContent=duration.toFixed(1)+" s clip  /  "+roundLimit+" rehearsal rounds";
   const ruler=find("ruler");
   for(let i=0;i<=4;i++) ruler.append(el("span",(duration*i/4).toFixed(1)+"s"));
   const strategies=find("strategies");
@@ -418,9 +483,11 @@ function startStudio(data) {
     stopAndPause(); beginComparison();
   };
   new ResizeObserver(drawRoll).observe(find("map"));
-  drawErrors(); showView(0); drawRoll();
+  const requestedRound = params.get("round");
+  const first = requestedRound === "final" ? roundLimit : Number(requestedRound) - 1;
+  drawErrors(); showView(Number.isInteger(first) && first >= 0 && first <= roundLimit ? first : 0); drawRoll();
 }
-if(session?.rounds?.length) startStudio(session);
+if(session?.frames && session?.playedNotes) startStudio(session);
 else {
   find("notice").textContent="The rehearsal recording could not be loaded. Check recording/session.js.";
   find("notice").hidden=false;
